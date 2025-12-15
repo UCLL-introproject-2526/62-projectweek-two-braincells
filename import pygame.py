@@ -2,15 +2,13 @@ import pygame
 import sys
 import random
 
-# --------------------
+
 # Initialize Pygame
-# --------------------
 pygame.init()
 
-# Screen settings
-SCREEN_WIDTH = 960
-SCREEN_HEIGHT = 480
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+# Fullscreen setup
+screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+SCREEN_WIDTH, SCREEN_HEIGHT = screen.get_size()  # get actual screen size
 pygame.display.set_caption("Fly Feast")
 
 # Clock
@@ -36,9 +34,9 @@ for _ in range(NUM_BEES):
 # Background color
 BG_COLOR = (135, 206, 250)  # light sky blue
 
-# --------------------
+
 # Main Game Loop
-# --------------------
+
 running = True
 while running:
     clock.tick(60)  # 60 FPS
@@ -47,22 +45,21 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+        # Optional: Exit on ESC key
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            running = False
 
-    # --------------------
     # Draw Background Color
-    # --------------------
     screen.fill(BG_COLOR)  # fill the screen with color every frame
 
-    # --------------------
     # Move & Draw Bees
-    # --------------------
     for bee in bees:
         bee["x"] += bee["speed"]
         bee["y"] += random.choice([-1, 0, 1])  # zig-zag movement
 
         # Reset bee when off screen
         if bee["x"] > SCREEN_WIDTH:
-            bee["x"] = -40
+            bee["x"] = -40  # reset just off the left side
             bee["y"] = random.randint(0, SCREEN_HEIGHT)
 
         # Draw bee
@@ -71,9 +68,7 @@ while running:
         else:
             pygame.draw.rect(screen, (255, 255, 0), (bee["x"], bee["y"], 40, 40))
 
-    # --------------------
     # Update Display
-    # --------------------
     pygame.display.flip()
 
 # Quit Game
