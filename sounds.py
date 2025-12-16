@@ -17,10 +17,20 @@ class SoundManager:
             "walk": pygame.mixer.Sound(os.path.join(SOUND_DIR, "walk.mp3")),
             "gameover": pygame.mixer.Sound(os.path.join(SOUND_DIR, "game_over.mp3")),
         }
+        
+        self.walking = False
 
     def play(self, name):
         if name in self.sounds:
             self.sounds[name].play()
+    
+    def play_loop(self, name):
+        if name in self.sounds:
+            self.sounds[name].play(-1)
+
+    def stop(self, name):
+        if name in self.sounds:
+            self.sounds[name].stop()
 
     def play_music(self):
         pygame.mixer.music.load(os.path.join(SOUND_DIR, "main_menu.mp3"))

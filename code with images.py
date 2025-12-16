@@ -1,11 +1,7 @@
 import pygame
 import sys
 import random
-<<<<<<< HEAD
-import os
-=======
 from sounds import SoundManager  # ✅ ADDED
->>>>>>> 98498926b44ec57f15f438d985360a4cef0bf904
 
 # ---------------- INIT ----------------
 pygame.init()
@@ -16,28 +12,6 @@ pygame.display.set_caption("Fly Feast")
 
 clock = pygame.time.Clock()
 
-<<<<<<< HEAD
-# ---------------- IMAGES FOLDER ----------------
-IMAGES_FOLDER = "images"  # folder where your images are stored
-
-def load_image(name, alpha=False):
-    path = os.path.join(IMAGES_FOLDER, name)
-    try:
-        if alpha:
-            return pygame.image.load(path).convert_alpha()
-        else:
-            return pygame.image.load(path).convert()
-    except Exception as e:
-        print(f"Failed to load {name}: {e}")
-        return None
-
-# ---------------- LOAD IMAGES ----------------
-bg_img = load_image("view.png")              # background image
-bee_img = load_image("fly.png", alpha=True)  # bee image
-
-# Scale background to fullscreen
-if bg_img:
-=======
 # ---------------- SOUND SETUP ----------------
 sound = SoundManager()
 sound.play_music()
@@ -45,7 +19,6 @@ sound.play_music()
 # ---------------- LOAD BACKGROUND ----------------
 try:
     bg_img = pygame.image.load("view.png").convert()
->>>>>>> 98498926b44ec57f15f438d985360a4cef0bf904
     bg_img = pygame.transform.scale(bg_img, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
 # ---------------- BEE SETUP ----------------
@@ -68,12 +41,6 @@ while running:
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             running = False
 
-<<<<<<< HEAD
-    # -------- CLEAR SCREEN --------
-    screen.fill((0, 0, 0))  # clear everything before drawing
-    if bg_img:
-        screen.blit(bg_img, (0, 0))  # draw background
-=======
         # -------- SOUND EVENTS (ADDED) --------
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
             sound.play("jump")
@@ -132,7 +99,6 @@ while running:
         screen.blit(bg_img, (0, 0))
     else:
         screen.fill((0, 0, 0))
->>>>>>> 98498926b44ec57f15f438d985360a4cef0bf904
 
     # -------- DRAW BEES --------
     for bee in bees:
@@ -146,8 +112,6 @@ while running:
         else:
             pygame.draw.rect(screen, (255, 255, 0), (bee["x"], bee["y"], 40, 40))
 
-<<<<<<< HEAD
-=======
     # Draw frog
     frog_img = frog_animations[current_animation][int(frame_index)]
     screen.blit(frog_img, (frog_x, frog_y))
@@ -156,7 +120,6 @@ while running:
     frog_x = max(0, min(frog_x, SCREEN_WIDTH - FRAME_W))
     frog_y = max(0, min(frog_y, SCREEN_HEIGHT - FRAME_H))
 
->>>>>>> 98498926b44ec57f15f438d985360a4cef0bf904
     pygame.display.flip()
 
 # ---------------- CLEANUP ----------------
