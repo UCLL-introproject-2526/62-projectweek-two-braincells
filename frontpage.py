@@ -2,6 +2,8 @@ import os
 import sys
 import json
 import pygame
+import subprocess
+
 
 pygame.init()
 pygame.mixer.init()
@@ -350,7 +352,10 @@ class HomeScene:
             self.app.scene = UsernameScene(self.app)
 
         if self.btn_play.clicked(event):
-            self.app.scene = GameScene(self.app)
+            pygame.quit()
+            subprocess.Popen([sys.executable, "import pygame.py"])
+            sys.exit()
+
 
         if self.btn_settings.clicked(event):
             self.app.scene = SettingsScene(self.app)
@@ -596,3 +601,5 @@ class GameScene:
 #-------------- MAIN -----------
 if __name__ == "__main__":
     App().run()
+
+    

@@ -1,7 +1,7 @@
 import pygame
 import sys
 import random
-from sounds import SoundManager   # ✅ ADDED
+from sounds import SoundManager  
 
 # ---------------- INIT ----------------
 pygame.init()
@@ -12,9 +12,11 @@ pygame.display.set_caption("Fly Feast")
 
 clock = pygame.time.Clock()
 
-# ---------------- SOUND SETUP (ADDED) ----------------
+# ---------------- SOUND SETUP ----------------
 sound = SoundManager()
 sound.play_music()
+pygame.mixer.music.set_volume(0.4)  # 0.0 = silent, 1.0 = max volume
+
 
 # ---------------- LOAD IMAGES ----------------
 def load_image(filename):
