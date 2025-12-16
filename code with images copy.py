@@ -23,7 +23,7 @@ def load_image(filename):
         return None
 
 bg_img = load_image("view.png")
-bee_img = load_image("bee.png")
+bee_img = load_image("fly.png")
 
 # ---------------- GAME VARIABLES ----------------
 bees = []
