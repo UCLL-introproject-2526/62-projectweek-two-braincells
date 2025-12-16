@@ -7,6 +7,10 @@ import subprocess
 
 pygame.init()
 pygame.mixer.init()
+pygame.mixer.music.load("main_menu.mp3") 
+pygame.mixer.music.set_volume(1.0)
+pygame.mixer.music.play(-1)  # loop forever
+
 
 #-------------- CONFIG / CONSTANTS -----------
 W, H = 1000, 650
@@ -352,9 +356,11 @@ class HomeScene:
             self.app.scene = UsernameScene(self.app)
 
         if self.btn_play.clicked(event):
+            pygame.mixer.music.stop()  
             pygame.quit()
             subprocess.Popen([sys.executable, "import pygame.py"])
             sys.exit()
+
 
 
         if self.btn_settings.clicked(event):
