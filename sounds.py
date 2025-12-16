@@ -32,7 +32,7 @@ class SoundManager:
             self.sounds[name].stop()
 
     def play_music(self):
-        pygame.mixer.music.load(os.path.join(BASE_DIR, "main_menu.mp3"))
+        pygame.mixer.music.load(os.path.join(BASE_DIR, "BackgroundMusic.mp3")) #Used to be main_menu.mp3
         pygame.mixer.music.play(-1)
 
     def stop_music(self):
