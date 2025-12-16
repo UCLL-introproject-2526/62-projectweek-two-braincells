@@ -224,9 +224,9 @@ class HomeScene:
             self.app.scene = GameScene(self.app)
             pygame.mixer.music.stop()  
             pygame.quit()
-            subprocess.Popen([sys.executable, "import pygame.py"])
+            subprocess.Popen([sys.executable, "projectweek2/app.py"])
             sys.exit()
-            
+
         if self.btn_settings.clicked(event):
             self.app.scene = SettingsScene(self.app)
 
