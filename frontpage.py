@@ -226,6 +226,9 @@ class HomeScene:
             pygame.quit()
             subprocess.Popen([sys.executable, "import pygame.py"])
             sys.exit()
+            
+        if self.btn_settings.clicked(event):
+            self.app.scene = SettingsScene(self.app)
 
         if self.btn_quit.clicked(event):
             pygame.quit()
