@@ -204,3 +204,4 @@ pyrightconfig.json
 *.rar
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
+players.json
