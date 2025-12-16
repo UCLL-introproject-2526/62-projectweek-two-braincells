@@ -1,6 +1,7 @@
 import pygame
 import sys
 import random
+from sounds import SoundManager  # ✅ ADDED
 
 # ---------------- INIT ----------------
 pygame.init()
@@ -10,6 +11,10 @@ SCREEN_WIDTH, SCREEN_HEIGHT = screen.get_size()
 pygame.display.set_caption("Fly Feast")
 
 clock = pygame.time.Clock()
+
+# ---------------- SOUND SETUP ----------------
+sound = SoundManager()
+sound.play_music()
 
 # ---------------- LOAD BACKGROUND ----------------
 try:
@@ -86,7 +91,28 @@ while running:
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             running = False
 
+        # -------- SOUND EVENTS (ADDED) --------
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            sound.play("jump")
+
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            sound.play("hit")
+            mouse_x, mouse_y = event.pos
+            for bee in bees:
+                bee_rect = pygame.Rect(bee["x"], bee["y"], 40, 40)
+                if bee_rect.collidepoint(mouse_x, mouse_y):
+                    sound.play("eaten")
+
     keys = pygame.key.get_pressed()
+
+    # -------- WALK SOUND (OPTIMIZED, ADDED) --------
+    moving = keys[pygame.K_LEFT] or keys[pygame.K_RIGHT]
+    if moving and not sound.walking:
+        sound.play_loop("walk")
+        sound.walking = True
+    elif not moving and sound.walking:
+        sound.stop("walk")
+        sound.walking = False
 
     # -------- FROG MOVEMENT & INPUT --------
     if not jumping and jump_cooldown == 0 and keys[pygame.K_SPACE]:
@@ -120,9 +146,9 @@ while running:
 
     # -------- DRAWING (CLEAR SCREEN FIRST) --------
     if bg_img:
-        screen.blit(bg_img, (0, 0))  # clear screen with background image
+        screen.blit(bg_img, (0, 0))
     else:
-        screen.fill((0, 0, 0))       # fallback clear to black if no image
+        screen.fill((0, 0, 0))
 
     # Draw bees
     for bee in bees:
@@ -144,8 +170,9 @@ while running:
     frog_x = max(0, min(frog_x, SCREEN_WIDTH - FRAME_W))
     frog_y = max(0, min(frog_y, SCREEN_HEIGHT - FRAME_H))
 
-    # Update display
     pygame.display.flip()
 
+# ---------------- CLEANUP ----------------
+sound.stop_music()
 pygame.quit()
 sys.exit()
