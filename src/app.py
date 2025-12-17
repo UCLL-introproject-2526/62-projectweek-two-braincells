@@ -27,6 +27,29 @@ PLATFORM_WIDTH = SWAMP_WIDTH // 2
 PLATFORM_HEIGHT = 20
 PLATFORM_X = SWAMP_START_X + (SWAMP_WIDTH - PLATFORM_WIDTH) // 2
 PLATFORM_Y = GROUND_Y - 80
+
+# Additional platforms for jumping around - evenly distributed across the map
+platforms = [
+    # Left side platforms (evenly spaced)
+    {"x": int(SCREEN_WIDTH * 0.05), "y": GROUND_Y - 100, "width": 100, "height": PLATFORM_HEIGHT},  # Far left, medium height
+    {"x": int(SCREEN_WIDTH * 0.20), "y": GROUND_Y - 160, "width": 100, "height": PLATFORM_HEIGHT},  # Left, higher
+    {"x": int(SCREEN_WIDTH * 0.35), "y": GROUND_Y - 80, "width": 100, "height": PLATFORM_HEIGHT},  # Left-center, lower
+    {"x": int(SCREEN_WIDTH * 0.50), "y": GROUND_Y - 140, "width": 100, "height": PLATFORM_HEIGHT},  # Center-left, medium
+    
+    # Platform over swamp
+    {"x": PLATFORM_X, "y": PLATFORM_Y, "width": PLATFORM_WIDTH, "height": PLATFORM_HEIGHT},  # Original platform over swamp
+    
+    # Right side platforms (evenly spaced)
+    {"x": SWAMP_START_X + SWAMP_WIDTH + int(SCREEN_WIDTH * 0.02), "y": GROUND_Y - 120, "width": 100, "height": PLATFORM_HEIGHT},  # Right of swamp, medium
+    {"x": int(SCREEN_WIDTH * 0.92), "y": GROUND_Y - 180, "width": 100, "height": PLATFORM_HEIGHT},  # Far right, higher
+    
+    # Upper area platforms (higher up on the screen)
+    {"x": int(SCREEN_WIDTH * 0.10), "y": GROUND_Y - 280, "width": 90, "height": PLATFORM_HEIGHT},  # Upper left
+    {"x": int(SCREEN_WIDTH * 0.30), "y": GROUND_Y - 320, "width": 90, "height": PLATFORM_HEIGHT},  # Upper left-center
+    {"x": int(SCREEN_WIDTH * 0.55), "y": GROUND_Y - 300, "width": 90, "height": PLATFORM_HEIGHT},  # Upper center
+    {"x": SWAMP_START_X + SWAMP_WIDTH + int(SCREEN_WIDTH * 0.05), "y": GROUND_Y - 260, "width": 90, "height": PLATFORM_HEIGHT},  # Upper right of swamp
+    {"x": int(SCREEN_WIDTH * 0.88), "y": GROUND_Y - 340, "width": 90, "height": PLATFORM_HEIGHT},  # Upper far right
+]
 NUM_FLIES = 6
 TIMER_START_SECONDS = 90
 SCORE_ANIMATION_DURATION = 200
@@ -597,7 +620,10 @@ while running:
                                                SCREEN_WIDTH - (SWAMP_START_X + SWAMP_WIDTH), SWAMP_HEIGHT - GROUND_HEIGHT))
     
     pygame.draw.rect(screen, SWAMP_COLOR, (SWAMP_START_X, GROUND_Y, SWAMP_WIDTH, SWAMP_HEIGHT))
-    pygame.draw.rect(screen, PLATFORM_COLOR, (PLATFORM_X, PLATFORM_Y, PLATFORM_WIDTH, PLATFORM_HEIGHT))
+    
+    # Draw all platforms
+    for platform in platforms:
+        pygame.draw.rect(screen, PLATFORM_COLOR, (platform["x"], platform["y"], platform["width"], platform["height"]))
     
     # Draw trees
     if tree_loaded and tree_images:
@@ -647,21 +673,24 @@ while running:
             character["velocity_y"] = 0
             on_ground = True
         
-        platform_rect = pygame.Rect(PLATFORM_X, PLATFORM_Y, PLATFORM_WIDTH, PLATFORM_HEIGHT)
+        # Check collision with all platforms
         char_rect = pygame.Rect(character["x"], character["y"], character["width"], character["height"])
-        if char_rect.colliderect(platform_rect) and character["velocity_y"] >= 0:
-            # Account for sprite padding - visual feet are higher than collision box bottom
-            platform_character_feet_y = character["y"] + character["height"]
-            platform_visual_feet_y = platform_character_feet_y - sprite_padding_offset
-            platform_target_y = PLATFORM_Y - character["height"] + sprite_padding_offset
-            
-            # Check if visual feet would be at or below platform top
-            if platform_visual_feet_y >= PLATFORM_Y or platform_character_feet_y >= PLATFORM_Y + sprite_padding_offset:
-                if character["y"] + character["height"] <= PLATFORM_Y + PLATFORM_HEIGHT:
-                    # Snap to exact platform position to prevent jittering
-                    character["y"] = platform_target_y
-                    character["velocity_y"] = 0
-                    on_ground = True
+        for platform in platforms:
+            platform_rect = pygame.Rect(platform["x"], platform["y"], platform["width"], platform["height"])
+            if char_rect.colliderect(platform_rect) and character["velocity_y"] >= 0:
+                # Account for sprite padding - visual feet are higher than collision box bottom
+                platform_character_feet_y = character["y"] + character["height"]
+                platform_visual_feet_y = platform_character_feet_y - sprite_padding_offset
+                platform_target_y = platform["y"] - character["height"] + sprite_padding_offset
+                
+                # Check if visual feet would be at or below platform top
+                if platform_visual_feet_y >= platform["y"] or platform_character_feet_y >= platform["y"] + sprite_padding_offset:
+                    if character["y"] + character["height"] <= platform["y"] + platform["height"]:
+                        # Snap to exact platform position to prevent jittering
+                        character["y"] = platform_target_y
+                        character["velocity_y"] = 0
+                        on_ground = True
+                        break  # Only land on one platform at a time
         
         character["on_ground"] = on_ground
         if on_ground:
@@ -670,8 +699,14 @@ while running:
         # Swamp death check
         character_center_x = character["x"] + character["width"] // 2
         character_bottom = character["y"] + character["height"]
-        on_platform = (PLATFORM_X <= character_center_x <= PLATFORM_X + PLATFORM_WIDTH and 
-                       PLATFORM_Y <= character_bottom <= PLATFORM_Y + PLATFORM_HEIGHT + 5)
+        
+        # Check if character is on any platform
+        on_platform = False
+        for platform in platforms:
+            if (platform["x"] <= character_center_x <= platform["x"] + platform["width"] and 
+                platform["y"] <= character_bottom <= platform["y"] + platform["height"] + 5):
+                on_platform = True
+                break
         
         if (SWAMP_START_X <= character_center_x <= SWAMP_START_X + SWAMP_WIDTH and 
             character_bottom >= GROUND_Y and not on_platform and not game_over):
@@ -698,31 +733,46 @@ while running:
             tongue_end_y = frog_center_y + math.sin(character["tongue_angle"]) * character["tongue_length"]
             
             # Fly collision
-            flies_to_remove = []
+            # 🔴 ADDED START: tongue hits ONLY ONE fly, then retracts immediately
+            hit_idx = None
+            hit_dot = None  # pick the closest hit along the tongue
+
             for i, fly in enumerate(flies):
                 fly_center_x = fly["x"] + 20
                 fly_center_y = fly["y"] + 20
                 to_fly_x = fly_center_x - frog_center_x
                 to_fly_y = fly_center_y - frog_center_y
+
                 dot_product = to_fly_x * math.cos(character["tongue_angle"]) + to_fly_y * math.sin(character["tongue_angle"])
-                
                 if 0 <= dot_product <= character["tongue_length"]:
                     perp_distance = abs(-to_fly_x * math.sin(character["tongue_angle"]) + to_fly_y * math.cos(character["tongue_angle"]))
                     if perp_distance < 30:
-                        sound.play("eaten")
-                        flies_to_remove.append(i)
-            
-            for i in reversed(flies_to_remove):
-                flies.pop(i)
+                        # choose the closest fly along the tongue direction
+                        if hit_dot is None or dot_product < hit_dot:
+                            hit_idx = i
+                            hit_dot = dot_product
+
+            if hit_idx is not None:
+                sound.play("eaten")
+
+                flies.pop(hit_idx)
                 score += 1
                 if score > high_score:
                     high_score = score
                 score_animation_time = current_time
+
+                # respawn exactly one fly
                 flies.append({
                     "x": random.randint(0, SCREEN_WIDTH),
                     "y": random.randint(0, SCREEN_HEIGHT),
                     "speed": random.randint(2, 4)
                 })
+
+                # retract immediately after first hit
+                character["tongue_extended"] = False
+                character["tongue_length"] = 0
+                character["tongue_end_time"] = current_time
+            # 🔴 ADDED END
     
     # Draw character
     if sprite_sheet_loaded and frog_frames:
