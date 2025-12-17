@@ -38,7 +38,7 @@ platforms = [
     {"x": int(SCREEN_WIDTH * 0.50), "y": GROUND_Y - 140, "width": 100, "height": PLATFORM_HEIGHT},
 
     # Platform over swamp
-    {"x": PLATFORM_X, "y": PLATFORM_Y, "width": PLATFORM_WIDTH, "height": PLATFORM_HEIGHT},
+   # {"x": PLATFORM_X, "y": PLATFORM_Y, "width": PLATFORM_WIDTH, "height": PLATFORM_HEIGHT},
 
     # Right side platforms (evenly spaced)
     {"x": SWAMP_START_X + SWAMP_WIDTH + int(SCREEN_WIDTH * 0.02), "y": GROUND_Y - 120, "width": 100, "height": PLATFORM_HEIGHT},
@@ -74,6 +74,16 @@ def load_image(path, convert_alpha=False):
     except:
         return None, False
 
+def darken_image(image, factor=0.7):
+    """Darken an image by a factor (0.0 = black, 1.0 = original)"""
+    if not image:
+        return None
+    darkened = image.copy()
+    overlay = pygame.Surface(image.get_size())
+    overlay.fill((int(255 * factor), int(255 * factor), int(255 * factor)))
+    darkened.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return darkened
+
 fly_img, _ = load_image(f"{SPRITES_DIR}/fly/fly.png", convert_alpha=True)
 background_img, background_loaded = load_image(f"{ASSETS_DIR}/background.png")
 
@@ -85,6 +95,77 @@ FLY_H = fly_img.get_height() if fly_img else 40
 UI_DIR = os.path.join(ASSETS_DIR, "ui")
 wooden_sign_img, wooden_sign_loaded = load_image(f"{UI_DIR}/wooden_sign_transparent_cleared.png", convert_alpha=True)
 
+# Load water tiles and crocodile
+WATER_TILE_SCALE = 2.3  # Scale adjusted to ensure no gaps
+water_tiles_dir = os.path.join(ASSETS_DIR, "sprites", "water_tiles_transparent")
+water_tile_1_raw, water_tile_1_loaded = load_image(f"{water_tiles_dir}/tile_1_top_left.png", convert_alpha=True)
+water_tile_2_raw, water_tile_2_loaded = load_image(f"{water_tiles_dir}/tile_2_top_right.png", convert_alpha=True)
+water_tile_3_raw, water_tile_3_loaded = load_image(f"{water_tiles_dir}/tile_3_bottom_left.png", convert_alpha=True)
+water_tile_4_raw, water_tile_4_loaded = load_image(f"{water_tiles_dir}/tile_4_bottom_right.png", convert_alpha=True)
+
+# Scale water tiles with smooth scaling and darken them
+WATER_TILE_DARKEN_FACTOR = 0.75  # Darken water tiles to match theme
+if water_tile_1_loaded and water_tile_1_raw:
+    original_size = water_tile_1_raw.get_size()
+    scaled = pygame.transform.smoothscale(water_tile_1_raw, 
+                                         (int(original_size[0] * WATER_TILE_SCALE), 
+                                          int(original_size[1] * WATER_TILE_SCALE)))
+    water_tile_1 = darken_image(scaled, WATER_TILE_DARKEN_FACTOR)
+else:
+    water_tile_1 = None
+
+if water_tile_2_loaded and water_tile_2_raw:
+    original_size = water_tile_2_raw.get_size()
+    scaled = pygame.transform.smoothscale(water_tile_2_raw, 
+                                         (int(original_size[0] * WATER_TILE_SCALE), 
+                                          int(original_size[1] * WATER_TILE_SCALE)))
+    water_tile_2 = darken_image(scaled, WATER_TILE_DARKEN_FACTOR)
+else:
+    water_tile_2 = None
+
+if water_tile_3_loaded and water_tile_3_raw:
+    original_size = water_tile_3_raw.get_size()
+    scaled = pygame.transform.smoothscale(water_tile_3_raw, 
+                                         (int(original_size[0] * WATER_TILE_SCALE), 
+                                          int(original_size[1] * WATER_TILE_SCALE)))
+    water_tile_3 = darken_image(scaled, WATER_TILE_DARKEN_FACTOR)
+else:
+    water_tile_3 = None
+
+if water_tile_4_loaded and water_tile_4_raw:
+    original_size = water_tile_4_raw.get_size()
+    scaled = pygame.transform.smoothscale(water_tile_4_raw, 
+                                         (int(original_size[0] * WATER_TILE_SCALE), 
+                                          int(original_size[1] * WATER_TILE_SCALE)))
+    water_tile_4 = darken_image(scaled, WATER_TILE_DARKEN_FACTOR)
+else:
+    water_tile_4 = None
+
+crocodile_frames_dir = os.path.join(ASSETS_DIR, "sprites", "crocodile_frames")
+crocodile_frame_1_raw, crocodile_frame_1_loaded = load_image(f"{crocodile_frames_dir}/crocodile_frame_1.png", convert_alpha=True)
+crocodile_frame_2_raw, crocodile_frame_2_loaded = load_image(f"{crocodile_frames_dir}/crocodile_frame_2.png", convert_alpha=True)
+
+# Darken crocodile frames to match theme
+CROCODILE_DARKEN_FACTOR = 0.75  # Darken crocodile to match theme
+if crocodile_frame_1_loaded and crocodile_frame_1_raw:
+    crocodile_frame_1 = darken_image(crocodile_frame_1_raw, CROCODILE_DARKEN_FACTOR)
+else:
+    crocodile_frame_1 = None
+
+if crocodile_frame_2_loaded and crocodile_frame_2_raw:
+    crocodile_frame_2 = darken_image(crocodile_frame_2_raw, CROCODILE_DARKEN_FACTOR)
+else:
+    crocodile_frame_2 = None
+
+# Water animation state
+water_animation_timer = 0
+water_animation_speed = 500  # milliseconds per frame
+water_frame = 0  # 0 or 1 for tiles 1/2, 0 or 1 for tiles 3/4
+
+crocodile_animation_timer = 0
+crocodile_animation_speed = 500  # milliseconds per frame
+crocodile_frame = 0  # 0 or 1
+
 # Load ground tiles
 ground_tiles_dir = os.path.join(ASSETS_DIR, "ground_tiles_25_pngs")
 GROUND_TILE_SCALE = 2
@@ -93,40 +174,45 @@ ground_tile_main_raw, ground_tile_main_loaded = load_image(f"{ground_tiles_dir}/
 ground_tile_corner_raw, ground_tile_corner_loaded = load_image(f"{ground_tiles_dir}/tile_r1_c3.png")
 ground_tile_left_corner_raw, ground_tile_left_corner_loaded = load_image(f"{ground_tiles_dir}/tile_r1_c1.png")
 
-# Scale ground tiles
+# Scale ground tiles and darken them
+GROUND_TILE_DARKEN_FACTOR = 0.7  # Darken ground tiles to match theme
 if ground_tile_upper_loaded and ground_tile_upper_raw:
     original_size = ground_tile_upper_raw.get_size()
-    ground_tile_upper = pygame.transform.scale(
+    scaled = pygame.transform.scale(
         ground_tile_upper_raw,
         (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
     )
+    ground_tile_upper = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
 else:
     ground_tile_upper = None
 
 if ground_tile_main_loaded and ground_tile_main_raw:
     original_size = ground_tile_main_raw.get_size()
-    ground_tile_main = pygame.transform.scale(
+    scaled = pygame.transform.scale(
         ground_tile_main_raw,
         (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
     )
+    ground_tile_main = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
 else:
     ground_tile_main = None
 
 if ground_tile_corner_loaded and ground_tile_corner_raw:
     original_size = ground_tile_corner_raw.get_size()
-    ground_tile_corner = pygame.transform.scale(
+    scaled = pygame.transform.scale(
         ground_tile_corner_raw,
         (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
     )
+    ground_tile_corner = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
 else:
     ground_tile_corner = None
 
 if ground_tile_left_corner_loaded and ground_tile_left_corner_raw:
     original_size = ground_tile_left_corner_raw.get_size()
-    ground_tile_left_corner = pygame.transform.scale(
+    scaled = pygame.transform.scale(
         ground_tile_left_corner_raw,
         (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
     )
+    ground_tile_left_corner = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
 else:
     ground_tile_left_corner = None
 
@@ -570,6 +656,15 @@ while running:
             else:
                 game_end_menu_visible = True
 
+    # Update water and crocodile animations
+    if current_time - water_animation_timer >= water_animation_speed:
+        water_animation_timer = current_time
+        water_frame = 1 - water_frame  # Toggle between 0 and 1
+    
+    if current_time - crocodile_animation_timer >= crocodile_animation_speed:
+        crocodile_animation_timer = current_time
+        crocodile_frame = 1 - crocodile_frame  # Toggle between 0 and 1
+
     # Skip game updates when paused or game ended
     if not paused and not game_end:
         # Update timer
@@ -689,6 +784,12 @@ while running:
         for tx in range(num_tiles_upper_x):
             tile_x = tx * upper_tile_width
             tile_y = GROUND_Y
+            tile_right = tile_x + upper_tile_width
+            
+            # Skip tiles that overlap with the swamp area
+            if tile_right > SWAMP_START_X and tile_x < SWAMP_START_X + SWAMP_WIDTH:
+                continue
+            
             if not (tile_x == top_right_corner_x and tile_y == top_right_corner_y) and \
                not (tile_x == top_left_right_ground_x and tile_y == top_left_right_ground_y):
                 screen.blit(ground_tile_upper, (tile_x, tile_y))
@@ -699,7 +800,10 @@ while running:
         if ground_tile_left_corner_loaded and ground_tile_left_corner:
             screen.blit(ground_tile_left_corner, (top_left_right_ground_x, top_left_right_ground_y))
     else:
-        pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y, SCREEN_WIDTH, GROUND_HEIGHT))
+        # Draw ground rectangles, but skip swamp area
+        pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y, SWAMP_START_X, GROUND_HEIGHT))
+        pygame.draw.rect(screen, GROUND_COLOR, (SWAMP_START_X + SWAMP_WIDTH, GROUND_Y, 
+                                               SCREEN_WIDTH - (SWAMP_START_X + SWAMP_WIDTH), GROUND_HEIGHT))
 
     if ground_tile_main_loaded and ground_tile_main:
         tile_width = ground_tile_main.get_width()
@@ -734,25 +838,91 @@ while running:
         pygame.draw.rect(screen, GROUND_COLOR, (SWAMP_START_X + SWAMP_WIDTH, GROUND_Y + GROUND_HEIGHT,
                                                SCREEN_WIDTH - (SWAMP_START_X + SWAMP_WIDTH), SWAMP_HEIGHT - GROUND_HEIGHT))
 
-    pygame.draw.rect(screen, SWAMP_COLOR, (SWAMP_START_X, GROUND_Y, SWAMP_WIDTH, SWAMP_HEIGHT))
+    # Draw water tiles and crocodile in swamp area
+    if water_tile_1_loaded and water_tile_2_loaded and water_tile_3_loaded and water_tile_4_loaded:
+        # Get tile dimensions (already scaled)
+        tile_width = water_tile_1.get_width()
+        tile_height = water_tile_1.get_height()
+        
+        # Calculate crocodile position (will be set when crocodile is loaded)
+        crocodile_x = SWAMP_START_X + (SWAMP_WIDTH // 2)
+        crocodile_y = GROUND_Y
+        crocodile_width = 0
+        crocodile_height = 0
+        
+        if crocodile_frame_1_loaded and crocodile_frame_2_loaded:
+            # Scale crocodile to make it bigger with smooth scaling (same scale as water tiles)
+            CROCODILE_SCALE = WATER_TILE_SCALE  # Same scale as water tiles
+            base_crocodile = crocodile_frame_1 if crocodile_frame == 0 else crocodile_frame_2
+            original_width = base_crocodile.get_width()
+            original_height = base_crocodile.get_height()
+            crocodile_width = int(original_width * CROCODILE_SCALE)
+            crocodile_height = int(original_height * CROCODILE_SCALE)
+            # Use smoothscale for better quality
+            current_crocodile = pygame.transform.smoothscale(base_crocodile, (crocodile_width, crocodile_height))
+            # Center crocodile horizontally
+            crocodile_x = SWAMP_START_X + (SWAMP_WIDTH - crocodile_width) // 2
+            # Position crocodile a little higher than water tiles
+            crocodile_y = GROUND_Y - 10  # Move up by 10 pixels
+        
+        # Calculate how many tiles fit in the swamp (add extra to ensure no gaps)
+        num_tiles_x = int(math.ceil(SWAMP_WIDTH / tile_width)) + 2
+        num_tiles_y = int(math.ceil(SWAMP_HEIGHT / tile_height)) + 2
+        
+        # Draw water tiles
+        for ty in range(num_tiles_y):
+            for tx in range(num_tiles_x):
+                tile_x = SWAMP_START_X + tx * tile_width
+                tile_y = GROUND_Y + ty * tile_height
+                tile_right = tile_x + tile_width
+                tile_bottom = tile_y + tile_height
+                
+                # Skip tiles that extend outside the swamp boundaries
+                if tile_x >= SWAMP_START_X + SWAMP_WIDTH or tile_right <= SWAMP_START_X:
+                    continue
+                if tile_y >= GROUND_Y + SWAMP_HEIGHT or tile_bottom <= GROUND_Y:
+                    continue
+                
+                # Determine which tile to use based on position
+                if ty == 0:  # Top row
+                    # Check if this position overlaps with crocodile
+                    if crocodile_frame_1_loaded and crocodile_frame_2_loaded and crocodile_width > 0:
+                        crocodile_left = crocodile_x
+                        crocodile_right = crocodile_x + crocodile_width
+                        tile_right = tile_x + tile_width
+                        tile_center = tile_x + tile_width // 2
+                        crocodile_center = crocodile_x + crocodile_width // 2
+                        
+                        # If tile center is to the left of crocodile center, use tile 1 (left side)
+                        if tile_center < crocodile_center:
+                            # Animate between tile 1 and tile 2
+                            current_tile = water_tile_1 if water_frame == 0 else water_tile_2
+                        # If tile center is to the right of crocodile center, use tile 2 (right side)
+                        else:
+                            # Animate between tile 2 and tile 1
+                            current_tile = water_tile_2 if water_frame == 0 else water_tile_1
+                    else:
+                        # No crocodile, alternate between tile 1 and 2
+                        current_tile = water_tile_1 if (tx + water_frame) % 2 == 0 else water_tile_2
+                else:  # Bottom rows
+                    # Use tiles 3 and 4, animate between tile 3 and 4
+                    current_tile = water_tile_3 if water_frame == 0 else water_tile_4
+                
+                # Draw tile even if it overlaps with crocodile (crocodile will be drawn on top)
+                screen.blit(current_tile, (tile_x, tile_y))
+        
+        # Draw crocodile on top (at top middle)
+        if crocodile_frame_1_loaded and crocodile_frame_2_loaded:
+            screen.blit(current_crocodile, (crocodile_x, crocodile_y))
+    else:
+        # Fallback to solid color if tiles not loaded
+        pygame.draw.rect(screen, SWAMP_COLOR, (SWAMP_START_X, GROUND_Y, SWAMP_WIDTH, SWAMP_HEIGHT))
 
     # Draw all platforms
     for platform in platforms:
         pygame.draw.rect(screen, PLATFORM_COLOR, (platform["x"], platform["y"], platform["width"], platform["height"]))
 
-    # Draw trees
-    if tree_loaded and tree_images:
-        tree_y_left = GROUND_Y - tree_height + 23
-        tree_y_middle = GROUND_Y - tree_height + 26
-        tree_y_right = GROUND_Y - tree_height + 33
-        tree_positions = [
-            (SCREEN_WIDTH // 8, tree_y_left, tree_images[0]),
-            (SCREEN_WIDTH // 4, tree_y_middle, tree_images[1]),
-            (SCREEN_WIDTH // 2 - 50, tree_y_right, tree_images[2])
-        ]
-        for tree_x, tree_y_pos, tree_img in tree_positions:
-            if tree_x < SWAMP_START_X:
-                screen.blit(tree_img, (tree_x, tree_y_pos))
+    # Trees removed - no longer drawing trees
 
     # Character movement (only when not paused and not game ended)
     if not paused and not game_end:
