@@ -5,6 +5,9 @@ import random
 import pygame
 import subprocess
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+GAME_PATH = os.path.join(BASE_DIR, "app.py")
+
 pygame.init()
 pygame.mixer.init()
 pygame.mixer.music.load("assets/sound/main_menu.mp3") 
@@ -41,7 +44,7 @@ DEFAULT_SETTINGS = {
 }
 
 #-------------- ASSETS (IMAGES) -----------
-ASSETS_DIR = "."
+ASSETS_DIR = os.path.join(BASE_DIR, "..", "assets")
 
 def safe_load_image(path, size=None, alpha=True):
     if not os.path.exists(path):
@@ -52,10 +55,10 @@ def safe_load_image(path, size=None, alpha=True):
         img = pygame.transform.smoothscale(img, size)
     return img
 
-BG_VIEW = safe_load_image(os.path.join(ASSETS_DIR, "view.png"), (W,H), alpha=False)
-ICON_PLAY = safe_load_image(os.path.join(ASSETS_DIR, "play.png"), (90,90))
-ICON_SETTINGS = safe_load_image(os.path.join(ASSETS_DIR, "settings.png"), (90,90))
-FLY_IMG = safe_load_image(os.path.join(ASSETS_DIR, "fly.png"), (40,40))
+BG_VIEW = safe_load_image(os.path.join(ASSETS_DIR, "background.png"), (W,H), alpha=False)
+ICON_PLAY = safe_load_image(os.path.join(ASSETS_DIR, "ui", "play.png"), (90,90))
+ICON_SETTINGS = safe_load_image(os.path.join(ASSETS_DIR, "ui", "settings.png"), (90,90))
+FLY_IMG = safe_load_image(os.path.join(ASSETS_DIR, "sprites", "fly", "fly.png"), (40,40))
 
 #-------------- HELPERS -----------
 def clamp(v, a, b):
@@ -221,12 +224,16 @@ class HomeScene:
 
     def handle_event(self,event):
         if self.btn_play.clicked(event):
-            self.app.scene = GameScene(self.app)
-            pygame.mixer.music.stop()  
-            pygame.quit()
-            subprocess.Popen([sys.executable, "projectweek2/app.py"])
-            sys.exit()
+            # Stop menu music
+            pygame.mixer.music.fadeout(500)
 
+            # Launch the game
+            subprocess.Popen([sys.executable, GAME_PATH])
+
+            # Close menu app cleanly
+            pygame.quit()
+            sys.exit()
+            
         if self.btn_settings.clicked(event):
             self.app.scene = SettingsScene(self.app)
 
