@@ -15,7 +15,7 @@ clock = pygame.time.Clock()
 
 sound = SoundManager()
 sound.play_music()
-pygame.mixer.music.set_volume(0.3)
+pygame.mixer.music.set_volume(0.25)
 
 # Constants
 GROUND_Y = SCREEN_HEIGHT - 150
@@ -51,6 +51,51 @@ def load_image(path, convert_alpha=False):
 
 fly_img, _ = load_image(f"{SPRITES_DIR}/fly/fly.png", convert_alpha=True)
 background_img, background_loaded = load_image(f"{ASSETS_DIR}/background.png")
+
+# Load UI images
+UI_DIR = os.path.join(ASSETS_DIR, "ui")
+wooden_sign_img, wooden_sign_loaded = load_image(f"{UI_DIR}/wooden_sign_transparent_cleared.png", convert_alpha=True)
+
+# Load ground tiles
+ground_tiles_dir = os.path.join(ASSETS_DIR, "ground_tiles_25_pngs")
+GROUND_TILE_SCALE = 2  # Scale factor to make tiles bigger
+ground_tile_upper_raw, ground_tile_upper_loaded = load_image(f"{ground_tiles_dir}/tile_r1_c2.png")
+ground_tile_main_raw, ground_tile_main_loaded = load_image(f"{ground_tiles_dir}/tile_r2_c3.png")
+ground_tile_corner_raw, ground_tile_corner_loaded = load_image(f"{ground_tiles_dir}/tile_r1_c3.png")
+ground_tile_left_corner_raw, ground_tile_left_corner_loaded = load_image(f"{ground_tiles_dir}/tile_r1_c1.png")
+
+# Scale ground tiles
+if ground_tile_upper_loaded and ground_tile_upper_raw:
+    original_size = ground_tile_upper_raw.get_size()
+    ground_tile_upper = pygame.transform.scale(ground_tile_upper_raw, 
+                                                (int(original_size[0] * GROUND_TILE_SCALE), 
+                                                 int(original_size[1] * GROUND_TILE_SCALE)))
+else:
+    ground_tile_upper = None
+
+if ground_tile_main_loaded and ground_tile_main_raw:
+    original_size = ground_tile_main_raw.get_size()
+    ground_tile_main = pygame.transform.scale(ground_tile_main_raw, 
+                                             (int(original_size[0] * GROUND_TILE_SCALE), 
+                                              int(original_size[1] * GROUND_TILE_SCALE)))
+else:
+    ground_tile_main = None
+
+if ground_tile_corner_loaded and ground_tile_corner_raw:
+    original_size = ground_tile_corner_raw.get_size()
+    ground_tile_corner = pygame.transform.scale(ground_tile_corner_raw, 
+                                               (int(original_size[0] * GROUND_TILE_SCALE), 
+                                                int(original_size[1] * GROUND_TILE_SCALE)))
+else:
+    ground_tile_corner = None
+
+if ground_tile_left_corner_loaded and ground_tile_left_corner_raw:
+    original_size = ground_tile_left_corner_raw.get_size()
+    ground_tile_left_corner = pygame.transform.scale(ground_tile_left_corner_raw, 
+                                                    (int(original_size[0] * GROUND_TILE_SCALE), 
+                                                     int(original_size[1] * GROUND_TILE_SCALE)))
+else:
+    ground_tile_left_corner = None
 
 # Load tree images
 tree_images = None
@@ -151,6 +196,14 @@ game_over_start_time = 0
 shake_duration = 700      # ms
 shake_magnitude = 20
 
+# --- PAUSE STATE ---
+paused = False
+pause_start_time = 0
+pause_menu_y = -500  # Start off-screen
+pause_menu_target_y = None  # Will be calculated based on sign height
+pause_menu_slide_speed = 15  # Pixels per frame
+pause_menu_visible = False
+
 
 # Create flies
 flies = []
@@ -162,9 +215,10 @@ for _ in range(NUM_FLIES):
     })
 
 # Character
+sprite_padding_offset = 5  # Offset to account for transparent padding at bottom of sprite
 character = {
     "x": SCREEN_WIDTH // 2,
-    "y": GROUND_Y - 30,
+    "y": GROUND_Y - 30 + sprite_padding_offset,
     "width": 50,
     "height": 30,
     "speed": 5,
@@ -172,7 +226,7 @@ character = {
     "velocity_y": 0,
     "gravity": 0.8,
     "on_ground": False,
-    "ground_y": GROUND_Y - 30,
+    "ground_y": GROUND_Y - 30 + sprite_padding_offset,
     "has_double_jump": True,
     "double_jump_cooldown_end": 0,
     "tongue_extended": False,
@@ -192,10 +246,10 @@ def reset_game():
     timer_remaining = TIMER_START_SECONDS
     
     character["x"] = SCREEN_WIDTH // 2
-    character["y"] = GROUND_Y - 30
+    character["y"] = GROUND_Y - 30 + sprite_padding_offset
     character["velocity_y"] = 0
     character["on_ground"] = False
-    character["ground_y"] = GROUND_Y - 30
+    character["ground_y"] = GROUND_Y - 30 + sprite_padding_offset
     character["has_double_jump"] = True
     character["double_jump_cooldown_end"] = 0
     character["tongue_extended"] = False
@@ -208,6 +262,24 @@ def reset_game():
         fly["x"] = random.randint(0, SCREEN_WIDTH)
         fly["y"] = random.randint(0, SCREEN_HEIGHT)
         fly["speed"] = random.randint(2, 4)
+
+def draw_tiled_ground(surface, tile_img, x, y, width, height):
+    """Draw tiled ground texture without gaps"""
+    if not tile_img:
+        return
+    tile_width = tile_img.get_width()
+    tile_height = tile_img.get_height()
+    
+    # Calculate how many tiles we need
+    num_tiles_x = int(math.ceil(width / tile_width)) + 1
+    num_tiles_y = int(math.ceil(height / tile_height)) + 1
+    
+    # Draw tiles
+    for ty in range(num_tiles_y):
+        for tx in range(num_tiles_x):
+            tile_x = x + tx * tile_width
+            tile_y = y + ty * tile_height
+            surface.blit(tile_img, (tile_x, tile_y))
 
 def draw_pixel_text(surface, text, x, y, scale=1.0, color=None):
     current_x = x
@@ -229,6 +301,108 @@ def draw_pixel_text(surface, text, x, y, scale=1.0, color=None):
         elif char == ' ':
             current_x += int(default_char_width * scale) // 2
 
+def draw_pause_menu(surface, menu_y):
+    """Draw the pause menu with wooden sign"""
+    if not wooden_sign_loaded or not wooden_sign_img:
+        return None, None, None, None
+    
+    sign_width = wooden_sign_img.get_width()
+    sign_height = wooden_sign_img.get_height()
+    
+    # Scale sign to fit screen nicely
+    scale_factor = min(SCREEN_WIDTH * 0.6 / sign_width, SCREEN_HEIGHT * 0.6 / sign_height)
+    scaled_width = int(sign_width * scale_factor)
+    scaled_height = int(sign_height * scale_factor)
+    scaled_sign = pygame.transform.scale(wooden_sign_img, (scaled_width, scaled_height))
+    
+    # Center the sign horizontally
+    sign_x = (SCREEN_WIDTH - scaled_width) // 2
+    sign_y = menu_y
+    
+    # Draw the sign
+    surface.blit(scaled_sign, (sign_x, sign_y))
+    
+    # Calculate text positions relative to sign - adjusted spacing to fit all items
+    text_start_y = sign_y + int(scaled_height * 0.15)  # Start a bit lower
+    text_spacing = int(scaled_height * 0.12)  # Reduced spacing to fit everything
+    
+    # Draw "PAUSED" title
+    if pixel_font_loaded:
+        paused_text = "PAUSED"
+        paused_scale = 0.45
+        paused_width = len(paused_text) * int(default_char_width * paused_scale) + (len(paused_text) - 1) * 2
+        paused_x = sign_x + (scaled_width - paused_width) // 2
+        draw_pixel_text(surface, paused_text, paused_x, text_start_y, scale=paused_scale, color=(255, 255, 255))
+        
+        # Draw score
+        score_text = f"SCORE: {score}"
+        score_scale = 0.3
+        score_width = len(score_text) * int(default_char_width * score_scale) + (len(score_text) - 1) * 2
+        score_x = sign_x + (scaled_width - score_width) // 2
+        draw_pixel_text(surface, score_text, score_x, text_start_y + text_spacing * 1.5, scale=score_scale, color=(255, 255, 255))
+        
+        # Draw high score - ensure it fits inside the sign
+        high_score_text = f"HIGH SCORE: {high_score}"
+        high_score_scale = 0.28  # Slightly smaller to ensure it fits
+        high_score_width = len(high_score_text) * int(default_char_width * high_score_scale) + (len(high_score_text) - 1) * 2
+        
+        # If text is too wide, reduce scale further
+        if high_score_width > scaled_width * 0.9:  # Leave 10% margin
+            high_score_scale = (scaled_width * 0.9) / (len(high_score_text) * default_char_width + (len(high_score_text) - 1) * 2)
+            high_score_width = len(high_score_text) * int(default_char_width * high_score_scale) + (len(high_score_text) - 1) * 2
+        
+        high_score_x = sign_x + (scaled_width - high_score_width) // 2
+        draw_pixel_text(surface, high_score_text, high_score_x, text_start_y + text_spacing * 2.5, scale=high_score_scale, color=(255, 255, 255))
+        
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        
+        # Draw "CONTINUE" option
+        continue_text = "CONTINUE"
+        continue_scale = 0.35
+        continue_width = len(continue_text) * int(default_char_width * continue_scale) + (len(continue_text) - 1) * 2
+        continue_x = sign_x + (scaled_width - continue_width) // 2
+        continue_y = text_start_y + text_spacing * 3.8
+        
+        continue_hover = (continue_x <= mouse_x <= continue_x + continue_width and 
+                         continue_y <= mouse_y <= continue_y + int(default_char_height * continue_scale))
+        continue_color = (200, 255, 200) if continue_hover else (255, 255, 255)
+        draw_pixel_text(surface, continue_text, continue_x, continue_y, scale=continue_scale, color=continue_color)
+        continue_rect = pygame.Rect(continue_x, continue_y, continue_width, int(default_char_height * continue_scale))
+        
+        # Draw "SETTINGS" option
+        settings_text = "SETTINGS"
+        settings_scale = 0.35
+        settings_width = len(settings_text) * int(default_char_width * settings_scale) + (len(settings_text) - 1) * 2
+        settings_x = sign_x + (scaled_width - settings_width) // 2
+        settings_y = text_start_y + text_spacing * 4.8
+        
+        settings_hover = (settings_x <= mouse_x <= settings_x + settings_width and 
+                        settings_y <= mouse_y <= settings_y + int(default_char_height * settings_scale))
+        settings_color = (200, 255, 200) if settings_hover else (255, 255, 255)
+        draw_pixel_text(surface, settings_text, settings_x, settings_y, scale=settings_scale, color=settings_color)
+        settings_rect = pygame.Rect(settings_x, settings_y, settings_width, int(default_char_height * settings_scale))
+        
+        # Draw "EXIT GAME" option
+        exit_text = "EXIT GAME"
+        exit_scale = 0.35
+        exit_width = len(exit_text) * int(default_char_width * exit_scale) + (len(exit_text) - 1) * 2
+        exit_x = sign_x + (scaled_width - exit_width) // 2
+        exit_y = text_start_y + text_spacing * 5.8
+        
+        exit_hover = (exit_x <= mouse_x <= exit_x + exit_width and 
+                     exit_y <= mouse_y <= exit_y + int(default_char_height * exit_scale))
+        exit_color = (255, 200, 200) if exit_hover else (255, 255, 255)
+        draw_pixel_text(surface, exit_text, exit_x, exit_y, scale=exit_scale, color=exit_color)
+        exit_rect = pygame.Rect(exit_x, exit_y, exit_width, int(default_char_height * exit_scale))
+        
+        return continue_rect, settings_rect, exit_rect, (sign_x, sign_y, scaled_width, scaled_height)
+    
+    return None, None, None, None
+
+def refresh_keybinds(self):
+    self._cached_keybinds = self.get_keybinds()
+
+
 # Main game loop
 running = True
 if timer_start_time is None:
@@ -238,19 +412,74 @@ while running:
     clock.tick(60)
     current_time = pygame.time.get_ticks()
     
-    # Update timer
-    elapsed_seconds = (current_time - timer_start_time) // 1000
-    timer_remaining = max(0, TIMER_START_SECONDS - elapsed_seconds)
-    if timer_remaining <= 0:
-        reset_game()
+    # Handle pause menu animation
+    if paused:
+        # Calculate target position based on sign height if not set
+        # Position sign so chain touches the top of the screen
+        if pause_menu_target_y is None and wooden_sign_loaded and wooden_sign_img:
+            sign_width = wooden_sign_img.get_width()
+            sign_height = wooden_sign_img.get_height()
+            scale_factor = min(SCREEN_WIDTH * 0.6 / sign_width, SCREEN_HEIGHT * 0.6 / sign_height)
+            scaled_height = int(sign_height * scale_factor)
+            # Position sign so top edge (chain) touches the top of the screen
+            pause_menu_target_y = 0
+        
+        if pause_menu_target_y is not None:
+            if pause_menu_y < pause_menu_target_y:
+                pause_menu_y += pause_menu_slide_speed
+                if pause_menu_y >= pause_menu_target_y:
+                    pause_menu_y = pause_menu_target_y
+                    pause_menu_visible = True
+            else:
+                pause_menu_visible = True
+    else:
+        if pause_menu_y > -500:
+            pause_menu_y -= pause_menu_slide_speed
+            if pause_menu_y <= -500:
+                pause_menu_y = -500
+                pause_menu_visible = False
+                pause_menu_target_y = None  # Reset for next pause
+    
+    # Skip game updates when paused
+    if not paused:
+        # Update timer
+        elapsed_seconds = (current_time - timer_start_time) // 1000
+        timer_remaining = max(0, TIMER_START_SECONDS - elapsed_seconds)
+        if timer_remaining <= 0:
+            reset_game()
     
 
     keys = pygame.key.get_pressed()
 
     # Event handling
     for event in pygame.event.get():
-        if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+        if event.type == pygame.QUIT:
             running = False
+        
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            if not game_over:
+                paused = not paused
+                if paused:
+                    pause_start_time = current_time
+                    pause_menu_y = -500  # Start from top
+                    pause_menu_visible = False
+                else:
+                    pause_menu_y = -500
+                    pause_menu_visible = False
+
+        elif paused and pause_menu_visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            continue_rect, settings_rect, exit_rect, _ = draw_pause_menu(screen, pause_menu_y)
+            
+            if continue_rect and continue_rect.collidepoint(mouse_x, mouse_y):
+                paused = False
+                pause_menu_y = -500
+                pause_menu_visible = False
+            elif settings_rect and settings_rect.collidepoint(mouse_x, mouse_y):
+                # TODO: Implement settings menu
+                pass
+            elif exit_rect and exit_rect.collidepoint(mouse_x, mouse_y):
+                running = False
 
         elif game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -259,7 +488,7 @@ while running:
                 reset_game()
                 game_over = False
 
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        elif not paused and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             sound.play("hit") 
             if not character["tongue_extended"]:
                 mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -296,10 +525,77 @@ while running:
         screen.fill(BG_COLOR)
     
     # Draw ground and swamp
-    pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y, SCREEN_WIDTH, GROUND_HEIGHT))
-    pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y + GROUND_HEIGHT, SWAMP_START_X, SWAMP_HEIGHT - GROUND_HEIGHT))
-    pygame.draw.rect(screen, GROUND_COLOR, (SWAMP_START_X + SWAMP_WIDTH, GROUND_Y + GROUND_HEIGHT, 
-                                           SCREEN_WIDTH - (SWAMP_START_X + SWAMP_WIDTH), SWAMP_HEIGHT - GROUND_HEIGHT))
+    # Draw uppermost ground line with r1_c2 tile, but replace top right corner with r1_c3 and top left of right ground with r1_c1
+    if ground_tile_upper_loaded and ground_tile_upper:
+        upper_tile_width = ground_tile_upper.get_width()
+        upper_tile_height = ground_tile_upper.get_height()
+        
+        # Calculate top right corner position (rightmost tile before swamp)
+        top_right_corner_x = ((SWAMP_START_X - 1) // upper_tile_width) * upper_tile_width
+        top_right_corner_y = GROUND_Y
+        
+        # Calculate top left corner of right ground area (first tile after swamp)
+        top_left_right_ground_x = ((SWAMP_START_X + SWAMP_WIDTH) // upper_tile_width) * upper_tile_width
+        top_left_right_ground_y = GROUND_Y
+        
+        # Draw uppermost ground line tiles, skipping the top right corner and top left of right ground
+        num_tiles_upper_x = int(math.ceil(SCREEN_WIDTH / upper_tile_width)) + 1
+        for tx in range(num_tiles_upper_x):
+            tile_x = tx * upper_tile_width
+            tile_y = GROUND_Y
+            # Skip the top right corner tile and top left of right ground
+            if not (tile_x == top_right_corner_x and tile_y == top_right_corner_y) and \
+               not (tile_x == top_left_right_ground_x and tile_y == top_left_right_ground_y):
+                screen.blit(ground_tile_upper, (tile_x, tile_y))
+        
+        # Draw r1_c3 tile at top right corner of uppermost ground line
+        if ground_tile_corner_loaded and ground_tile_corner:
+            screen.blit(ground_tile_corner, (top_right_corner_x, top_right_corner_y))
+        
+        # Draw r1_c1 tile at top left corner of right ground area
+        if ground_tile_left_corner_loaded and ground_tile_left_corner:
+            screen.blit(ground_tile_left_corner, (top_left_right_ground_x, top_left_right_ground_y))
+    else:
+        pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y, SCREEN_WIDTH, GROUND_HEIGHT))
+    
+    # Draw ground areas below swamp with r2_c3 tile
+    if ground_tile_main_loaded and ground_tile_main:
+        tile_width = ground_tile_main.get_width()
+        tile_height = ground_tile_main.get_height()
+        left_ground_width = SWAMP_START_X
+        left_ground_height = SWAMP_HEIGHT - GROUND_HEIGHT
+        left_ground_x = 0
+        left_ground_y = GROUND_Y + GROUND_HEIGHT
+        
+        # Calculate top right corner tile position (rightmost tile in top row of left ground area)
+        # This should align with the r1_c3 tile above it
+        top_right_tile_x = ((SWAMP_START_X - 1) // tile_width) * tile_width
+        top_right_tile_y = left_ground_y
+        
+        # Calculate how many tiles we need
+        num_tiles_x = int(math.ceil(left_ground_width / tile_width)) + 1
+        num_tiles_y = int(math.ceil(left_ground_height / tile_height)) + 1
+        
+        # Draw tiles, but skip the tile directly under the r1_c3 corner tile
+        for ty in range(num_tiles_y):
+            for tx in range(num_tiles_x):
+                tile_x = left_ground_x + tx * tile_width
+                tile_y = left_ground_y + ty * tile_height
+                # Skip the tile directly under the r1_c3 corner (top right corner of left ground area)
+                if not (tile_x == top_right_tile_x and tile_y == top_right_tile_y):
+                    screen.blit(ground_tile_main, (tile_x, tile_y))
+        
+        # Draw r2_c3 tile directly under the r1_c3 corner tile
+        screen.blit(ground_tile_main, (top_right_tile_x, top_right_tile_y))
+        
+        # Right side ground
+        draw_tiled_ground(screen, ground_tile_main, SWAMP_START_X + SWAMP_WIDTH, GROUND_Y + GROUND_HEIGHT, 
+                         SCREEN_WIDTH - (SWAMP_START_X + SWAMP_WIDTH), SWAMP_HEIGHT - GROUND_HEIGHT)
+    else:
+        pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y + GROUND_HEIGHT, SWAMP_START_X, SWAMP_HEIGHT - GROUND_HEIGHT))
+        pygame.draw.rect(screen, GROUND_COLOR, (SWAMP_START_X + SWAMP_WIDTH, GROUND_Y + GROUND_HEIGHT, 
+                                               SCREEN_WIDTH - (SWAMP_START_X + SWAMP_WIDTH), SWAMP_HEIGHT - GROUND_HEIGHT))
+    
     pygame.draw.rect(screen, SWAMP_COLOR, (SWAMP_START_X, GROUND_Y, SWAMP_WIDTH, SWAMP_HEIGHT))
     pygame.draw.rect(screen, PLATFORM_COLOR, (PLATFORM_X, PLATFORM_Y, PLATFORM_WIDTH, PLATFORM_HEIGHT))
     
@@ -319,97 +615,114 @@ while running:
             if tree_x < SWAMP_START_X:
                 screen.blit(tree_img, (tree_x, tree_y_pos))
     
-    # Character movement
-    if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-        character["x"] -= character["speed"]
-        character["facing_direction"] = "left"
-    if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-        character["x"] += character["speed"]
-        character["facing_direction"] = "right"
+    # Character movement (only when not paused)
+    if not paused:
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            character["x"] -= character["speed"]
+            character["facing_direction"] = "left"
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            character["x"] += character["speed"]
+            character["facing_direction"] = "right"
+        
+        character["x"] = max(0, min(character["x"], SCREEN_WIDTH - character["width"]))
+        
+        # Physics
+        character["velocity_y"] += character["gravity"]
+        character["y"] += character["velocity_y"]
     
-    character["x"] = max(0, min(character["x"], SCREEN_WIDTH - character["width"]))
-    
-    # Physics
-    character["velocity_y"] += character["gravity"]
-    character["y"] += character["velocity_y"]
-    
-    # Ground/platform collision
-    character_feet_y = character["y"] + character["height"]
-    on_ground = False
-    
-    if character_feet_y >= GROUND_Y:
-        character["y"] = GROUND_Y - character["height"]
-        character["velocity_y"] = 0
-        on_ground = True
-    
-    platform_rect = pygame.Rect(PLATFORM_X, PLATFORM_Y, PLATFORM_WIDTH, PLATFORM_HEIGHT)
-    char_rect = pygame.Rect(character["x"], character["y"], character["width"], character["height"])
-    if char_rect.colliderect(platform_rect) and character["velocity_y"] >= 0:
-        if character["y"] + character["height"] <= PLATFORM_Y + PLATFORM_HEIGHT:
-            character["y"] = PLATFORM_Y - character["height"]
+        # Ground/platform collision
+        # Account for sprite padding - visual feet are higher than collision box bottom
+        character_feet_y = character["y"] + character["height"]
+        on_ground = False
+        
+        # Visual feet position (accounting for transparent padding at bottom of sprite)
+        # Visual feet are sprite_padding_offset pixels above the collision box bottom
+        visual_feet_y = character_feet_y - sprite_padding_offset
+        target_y = GROUND_Y - character["height"] + sprite_padding_offset
+        
+        # Check if visual feet would be at or below ground level
+        if visual_feet_y >= GROUND_Y or character_feet_y >= GROUND_Y + sprite_padding_offset:
+            # Snap to exact ground position to prevent jittering
+            character["y"] = target_y
             character["velocity_y"] = 0
             on_ground = True
-    
-    character["on_ground"] = on_ground
-    if on_ground:
-        character["has_double_jump"] = True
-    
-    # Swamp death check
-    character_center_x = character["x"] + character["width"] // 2
-    character_bottom = character["y"] + character["height"]
-    on_platform = (PLATFORM_X <= character_center_x <= PLATFORM_X + PLATFORM_WIDTH and 
-                   PLATFORM_Y <= character_bottom <= PLATFORM_Y + PLATFORM_HEIGHT + 5)
-    
-    if (SWAMP_START_X <= character_center_x <= SWAMP_START_X + SWAMP_WIDTH and 
-        character_bottom >= GROUND_Y and not on_platform and not game_over):
-
-        sound.play("gameover")
-        game_over = True
-        game_over_start_time = pygame.time.get_ticks()
-
-    
-    # Update tongue
-    if character["tongue_extended"]:
-        if character["tongue_length"] < character["tongue_max_length"]:
-            character["tongue_length"] += character["tongue_speed"]
-        else:
-            character["tongue_length"] = character["tongue_max_length"]
         
-        if current_time >= character["tongue_end_time"]:
-            character["tongue_extended"] = False
-            character["tongue_length"] = 0
-        
-        frog_center_x = character["x"] + character["width"] // 2
-        frog_center_y = character["y"] + character["height"] // 2
-        tongue_end_x = frog_center_x + math.cos(character["tongue_angle"]) * character["tongue_length"]
-        tongue_end_y = frog_center_y + math.sin(character["tongue_angle"]) * character["tongue_length"]
-        
-        # Fly collision
-        flies_to_remove = []
-        for i, fly in enumerate(flies):
-            fly_center_x = fly["x"] + 20
-            fly_center_y = fly["y"] + 20
-            to_fly_x = fly_center_x - frog_center_x
-            to_fly_y = fly_center_y - frog_center_y
-            dot_product = to_fly_x * math.cos(character["tongue_angle"]) + to_fly_y * math.sin(character["tongue_angle"])
+        platform_rect = pygame.Rect(PLATFORM_X, PLATFORM_Y, PLATFORM_WIDTH, PLATFORM_HEIGHT)
+        char_rect = pygame.Rect(character["x"], character["y"], character["width"], character["height"])
+        if char_rect.colliderect(platform_rect) and character["velocity_y"] >= 0:
+            # Account for sprite padding - visual feet are higher than collision box bottom
+            platform_character_feet_y = character["y"] + character["height"]
+            platform_visual_feet_y = platform_character_feet_y - sprite_padding_offset
+            platform_target_y = PLATFORM_Y - character["height"] + sprite_padding_offset
             
-            if 0 <= dot_product <= character["tongue_length"]:
-                perp_distance = abs(-to_fly_x * math.sin(character["tongue_angle"]) + to_fly_y * math.cos(character["tongue_angle"]))
-                if perp_distance < 30:
-                    sound.play("eaten")
-                    flies_to_remove.append(i)
+            # Check if visual feet would be at or below platform top
+            if platform_visual_feet_y >= PLATFORM_Y or platform_character_feet_y >= PLATFORM_Y + sprite_padding_offset:
+                if character["y"] + character["height"] <= PLATFORM_Y + PLATFORM_HEIGHT:
+                    # Snap to exact platform position to prevent jittering
+                    character["y"] = platform_target_y
+                    character["velocity_y"] = 0
+                    on_ground = True
         
-        for i in reversed(flies_to_remove):
-            flies.pop(i)
-            score += 1
-            if score > high_score:
-                high_score = score
-            score_animation_time = current_time
-            flies.append({
-                "x": random.randint(0, SCREEN_WIDTH),
-                "y": random.randint(0, SCREEN_HEIGHT),
-                "speed": random.randint(2, 4)
-            })
+        character["on_ground"] = on_ground
+        if on_ground:
+            character["has_double_jump"] = True
+        
+        # Swamp death check
+        character_center_x = character["x"] + character["width"] // 2
+        character_bottom = character["y"] + character["height"]
+        on_platform = (PLATFORM_X <= character_center_x <= PLATFORM_X + PLATFORM_WIDTH and 
+                       PLATFORM_Y <= character_bottom <= PLATFORM_Y + PLATFORM_HEIGHT + 5)
+        
+        if (SWAMP_START_X <= character_center_x <= SWAMP_START_X + SWAMP_WIDTH and 
+            character_bottom >= GROUND_Y and not on_platform and not game_over):
+
+            sound.play("gameover")
+            game_over = True
+            game_over_start_time = pygame.time.get_ticks()
+
+        
+        # Update tongue
+        if character["tongue_extended"]:
+            if character["tongue_length"] < character["tongue_max_length"]:
+                character["tongue_length"] += character["tongue_speed"]
+            else:
+                character["tongue_length"] = character["tongue_max_length"]
+            
+            if current_time >= character["tongue_end_time"]:
+                character["tongue_extended"] = False
+                character["tongue_length"] = 0
+            
+            frog_center_x = character["x"] + character["width"] // 2
+            frog_center_y = character["y"] + character["height"] // 2
+            tongue_end_x = frog_center_x + math.cos(character["tongue_angle"]) * character["tongue_length"]
+            tongue_end_y = frog_center_y + math.sin(character["tongue_angle"]) * character["tongue_length"]
+            
+            # Fly collision
+            flies_to_remove = []
+            for i, fly in enumerate(flies):
+                fly_center_x = fly["x"] + 20
+                fly_center_y = fly["y"] + 20
+                to_fly_x = fly_center_x - frog_center_x
+                to_fly_y = fly_center_y - frog_center_y
+                dot_product = to_fly_x * math.cos(character["tongue_angle"]) + to_fly_y * math.sin(character["tongue_angle"])
+                
+                if 0 <= dot_product <= character["tongue_length"]:
+                    perp_distance = abs(-to_fly_x * math.sin(character["tongue_angle"]) + to_fly_y * math.cos(character["tongue_angle"]))
+                    if perp_distance < 30:
+                        sound.play("eaten")
+                        flies_to_remove.append(i)
+            
+            for i in reversed(flies_to_remove):
+                flies.pop(i)
+                score += 1
+                if score > high_score:
+                    high_score = score
+                score_animation_time = current_time
+                flies.append({
+                    "x": random.randint(0, SCREEN_WIDTH),
+                    "y": random.randint(0, SCREEN_HEIGHT),
+                    "speed": random.randint(2, 4)
+                })
     
     # Draw character
     if sprite_sheet_loaded and frog_frames:
@@ -503,13 +816,14 @@ while running:
         pygame.draw.line(screen, (200, 0, 0), (frog_center_x, frog_center_y), (tongue_end_x, tongue_end_y), 8)
         pygame.draw.circle(screen, (150, 0, 0), (int(tongue_end_x), int(tongue_end_y)), 6)
     
-    # Draw flies
+    # Update and draw flies (only update when not paused)
     for fly in flies:
-        fly["x"] += fly["speed"]
-        fly["y"] += random.choice([-1, 0, 1])
-        if fly["x"] > SCREEN_WIDTH:
-            fly["x"] = -40
-            fly["y"] = random.randint(0, SCREEN_HEIGHT)
+        if not paused:
+            fly["x"] += fly["speed"]
+            fly["y"] += random.choice([-1, 0, 1])
+            if fly["x"] > SCREEN_WIDTH:
+                fly["x"] = -40
+                fly["y"] = random.randint(0, SCREEN_HEIGHT)
         if fly_img:
             screen.blit(fly_img, (fly["x"], fly["y"]))
         else:
@@ -549,6 +863,17 @@ while running:
         text_width = len(score_text) * char_width + (len(score_text) - 1) * 2
         score_x = SCREEN_WIDTH - text_width - 20
         draw_pixel_text(screen, score_text, score_x, 20, scale=scale)
+    
+    # Draw pause menu
+    if paused:
+        # Dark overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+        
+        # Draw pause menu with wooden sign
+        draw_pause_menu(screen, pause_menu_y)
     
     if game_over:
     # Dark overlay

@@ -87,6 +87,18 @@ def draw_bg_or_color(surf, bg_img, fallback_color):
     else:
         surf.fill(fallback_color)
 
+# 🔴 ADDED START: leaderboard helper
+def get_leaderboard_rows(players: dict, limit=8):
+    rows = []
+    for name, stats in players.items():
+        plays = int(stats.get("plays", 0))
+        best = int(stats.get("best_score", 0))
+        last = int(stats.get("last_score", 0))
+        rows.append((name, plays, best, last))
+    rows.sort(key=lambda r: (r[2], r[1]), reverse=True)  # best desc, then plays desc
+    return rows[:limit]
+# 🔴 ADDED END
+
 #-------------- UI WIDGETS -----------
 class Button:
     def __init__(self, rect, label):
@@ -252,6 +264,44 @@ class HomeScene:
         self.btn_quit.draw(surf)
         if ICON_PLAY: surf.blit(ICON_PLAY,(80+85,220+5))
         if ICON_SETTINGS: surf.blit(ICON_SETTINGS,(370+85,220+5))
+
+# 🔴 ADDED START: Leaderboard panel on the Home/frontpage (no overlap)
+        # Placed BELOW the buttons row: buttons occupy y ~ 220..320, so panel starts at y=360.
+        panel = pygame.Rect(60, 360, W - 120, 250)
+
+        panel_bg = pygame.Surface((panel.width, panel.height), pygame.SRCALPHA)
+        panel_bg.fill((0, 0, 0, 140))  # translucent overlay
+        surf.blit(panel_bg, panel.topleft)
+        pygame.draw.rect(surf, (160, 160, 180), panel, 2, border_radius=14)
+
+        draw_text(surf, "Leaderboard", FONT, panel.left + 15, panel.top + 12)
+
+        header_y = panel.top + 55
+        draw_text(surf, "NAME", FONT_SMALL, panel.left + 15, header_y, (200, 200, 210))
+        draw_text(surf, "PLAYS", FONT_SMALL, panel.left + 340, header_y, (200, 200, 210))
+        draw_text(surf, "BEST",  FONT_SMALL, panel.left + 460, header_y, (200, 200, 210))
+        draw_text(surf, "LAST",  FONT_SMALL, panel.left + 580, header_y, (200, 200, 210))
+
+        rows = get_leaderboard_rows(self.app.players, limit=7)
+        y = header_y + 28
+        line_h = 26
+
+        if not rows:
+            draw_text(surf, "No players yet.", FONT_SMALL, panel.left + 15, y, (220, 220, 230))
+        else:
+            for i, (name, plays, best, last) in enumerate(rows, start=1):
+                is_me = (name == self.app.username)
+                col = (255, 220, 120) if is_me else (235, 235, 235)
+
+                draw_text(surf, f"{i:>2}. {name}", FONT_SMALL, panel.left + 15, y, col)
+                draw_text(surf, str(plays), FONT_SMALL, panel.left + 350, y, (235, 235, 235))
+                draw_text(surf, str(best),  FONT_SMALL, panel.left + 470, y, (235, 235, 235))
+                draw_text(surf, str(last),  FONT_SMALL, panel.left + 590, y, (235, 235, 235))
+
+                y += line_h
+                if y > panel.bottom - 20:
+                    break
+        # 🔴 ADDED END
 
 class GameScene:
     def __init__(self, app):
