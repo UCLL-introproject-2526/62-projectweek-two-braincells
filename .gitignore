@@ -192,8 +192,6 @@ pyrightconfig.json
 # Ignore all local history of files
 .history
 .ionide
-*.wav
-*.mp3
 *.ogg
 *.midi
 *.zip
@@ -201,3 +199,4 @@ pyrightconfig.json
 *.rar
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
+players.json

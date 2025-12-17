@@ -6,7 +6,7 @@ pygame.init()
 pygame.mixer.init()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SOUND_DIR = os.path.join(BASE_DIR, "sounds")
+SOUND_DIR = os.path.join(BASE_DIR, "..", "assets", "sound")
 
 class SoundManager:
     def __init__(self):
@@ -23,8 +23,9 @@ class SoundManager:
             self.sounds[name].play()
 
     def play_music(self):
-        pygame.mixer.music.load(os.path.join(SOUND_DIR, "main_menu.mp3"))
+        pygame.mixer.music.load(os.path.join(SOUND_DIR, "background_music.mp3"))
         pygame.mixer.music.play(-1)
 
     def stop_music(self):
         pygame.mixer.music.stop()
+
