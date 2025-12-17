@@ -5,12 +5,12 @@ import random
 import pygame
 import subprocess
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-GAME_PATH = os.path.join(BASE_DIR, "app.py")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Project root
+GAME_PATH = os.path.join(BASE_DIR, "src", "app.py")
 
 pygame.init()
 pygame.mixer.init()
-pygame.mixer.music.load("assets/sound/main_menu.mp3") 
+pygame.mixer.music.load(os.path.join(BASE_DIR, "assets", "sound", "main_menu.mp3")) 
 pygame.mixer.music.set_volume(1.0)
 pygame.mixer.music.play(-1)  # loop forever
 
@@ -25,8 +25,8 @@ FONT_BIG = pygame.font.Font(None, 72)
 FONT = pygame.font.Font(None, 40)
 FONT_SMALL = pygame.font.Font(None, 28)
 
-PLAYERS_PATH = "players.json"
-SETTINGS_PATH = "settings.json"
+PLAYERS_PATH = os.path.join(BASE_DIR, "players.json")
+SETTINGS_PATH = os.path.join(BASE_DIR, "settings.json")
 
 DEFAULT_SETTINGS = {
     "keybinds": {  
@@ -44,7 +44,7 @@ DEFAULT_SETTINGS = {
 }
 
 #-------------- ASSETS (IMAGES) -----------
-ASSETS_DIR = os.path.join(BASE_DIR, "..", "assets")
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 def safe_load_image(path, size=None, alpha=True):
     if not os.path.exists(path):
@@ -86,18 +86,6 @@ def draw_bg_or_color(surf, bg_img, fallback_color):
         surf.blit(bg_img, (0, 0))
     else:
         surf.fill(fallback_color)
-
-# 🔴 ADDED START: leaderboard helper
-def get_leaderboard_rows(players: dict, limit=8):
-    rows = []
-    for name, stats in players.items():
-        plays = int(stats.get("plays", 0))
-        best = int(stats.get("best_score", 0))
-        last = int(stats.get("last_score", 0))
-        rows.append((name, plays, best, last))
-    rows.sort(key=lambda r: (r[2], r[1]), reverse=True)  # best desc, then plays desc
-    return rows[:limit]
-# 🔴 ADDED END
 
 #-------------- UI WIDGETS -----------
 class Button:
@@ -264,8 +252,6 @@ class HomeScene:
         self.btn_quit.draw(surf)
         if ICON_PLAY: surf.blit(ICON_PLAY,(80+85,220+5))
         if ICON_SETTINGS: surf.blit(ICON_SETTINGS,(370+85,220+5))
-
-
 
 class GameScene:
     def __init__(self, app):

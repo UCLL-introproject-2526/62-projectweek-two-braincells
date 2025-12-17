@@ -4,19 +4,54 @@ import random
 import math
 import os
 import subprocess
+import json
 from sounds import SoundManager
 
 # Initialize Pygame
 pygame.init()
-# screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN) # todo: revert back to this
 screen = pygame.display.set_mode((0, 0))
 SCREEN_WIDTH, SCREEN_HEIGHT = screen.get_size()
 pygame.display.set_caption("Fly Feast")
 clock = pygame.time.Clock()
 
+# Get the directory where this script is located, then go up one level to project root
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+SPRITES_DIR = os.path.join(ASSETS_DIR, "sprites")
+
 sound = SoundManager()
 sound.play_music()
-pygame.mixer.music.set_volume(0.25)
+
+# Load settings
+SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
+settings = {
+    "sound": {
+        "music": 0.25,
+        "sfx": 0.5,
+        "muted": False
+    }
+}
+
+def load_settings():
+    global settings
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, 'r') as f:
+                loaded = json.load(f)
+                if "sound" in loaded:
+                    settings["sound"].update(loaded["sound"])
+        except:
+            pass
+    pygame.mixer.music.set_volume(settings["sound"]["music"])
+
+def save_settings():
+    try:
+        with open(SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=2)
+    except:
+        pass
+
+load_settings()
 
 # Constants
 GROUND_Y = SCREEN_HEIGHT - 150
@@ -37,8 +72,6 @@ platforms = [
     {"x": int(SCREEN_WIDTH * 0.35), "y": GROUND_Y - 80, "width": 100, "height": PLATFORM_HEIGHT},
     {"x": int(SCREEN_WIDTH * 0.50), "y": GROUND_Y - 140, "width": 100, "height": PLATFORM_HEIGHT},
 
-    # Platform over swamp
-    {"x": PLATFORM_X, "y": PLATFORM_Y, "width": PLATFORM_WIDTH, "height": PLATFORM_HEIGHT},
 
     # Right side platforms (evenly spaced)
     {"x": SWAMP_START_X + SWAMP_WIDTH + int(SCREEN_WIDTH * 0.02), "y": GROUND_Y - 120, "width": 100, "height": PLATFORM_HEIGHT},
@@ -61,10 +94,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 SPRITES_DIR = os.path.join(ASSETS_DIR, "sprites")
 
-# Debug: Print paths to verify they're correct
-print(f"BASE_DIR: {BASE_DIR}")
-print(f"ASSETS_DIR: {ASSETS_DIR}")
-print(f"ASSETS_DIR exists: {os.path.exists(ASSETS_DIR)}")
 
 # Colors
 BG_COLOR = (135, 206, 250)
@@ -74,15 +103,12 @@ PLATFORM_COLOR = (105, 85, 65)
 
 # Load images
 def load_image(path, convert_alpha=False):
+    if not os.path.exists(path):
+        return None, False
     try:
-        # Check if file exists
-        if not os.path.exists(path):
-            print(f"Warning: Image file not found: {path}")
-            return None, False
         img = pygame.image.load(path)
         return img.convert_alpha() if convert_alpha else img.convert(), True
-    except Exception as e:
-        print(f"Error loading image {path}: {e}")
+    except Exception:
         return None, False
 
 def darken_image(image, factor=0.7):
@@ -90,35 +116,13 @@ def darken_image(image, factor=0.7):
     if not image:
         return None
     try:
-        # Make a copy to avoid modifying the original, preserving format
         darkened = image.copy()
-        
-        # Get the original format flags
         has_alpha = image.get_flags() & pygame.SRCALPHA
-        
-        # Create a darkening surface matching the image format
-        if has_alpha:
-            dark_surface = pygame.Surface(darkened.get_size(), pygame.SRCALPHA)
-            dark_surface.fill((int(255 * factor), int(255 * factor), int(255 * factor), 255))
-        else:
-            # For non-alpha images, create surface and convert to match
-            dark_surface = pygame.Surface(darkened.get_size())
-            dark_surface.fill((int(255 * factor), int(255 * factor), int(255 * factor)))
-            dark_surface = dark_surface.convert(darkened)
-        
-        # Apply darkening
+        dark_surface = pygame.Surface(darkened.get_size(), pygame.SRCALPHA if has_alpha else 0)
+        dark_surface.fill((int(255 * factor), int(255 * factor), int(255 * factor), 255 if has_alpha else 0))
         darkened.blit(dark_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        
-        # Ensure output format matches input
-        if has_alpha and not (darkened.get_flags() & pygame.SRCALPHA):
-            darkened = darkened.convert_alpha()
-        elif not has_alpha and (darkened.get_flags() & pygame.SRCALPHA):
-            darkened = darkened.convert()
-        
-        return darkened
-    except Exception as e:
-        # If darkening fails, return original image (never return None)
-        print(f"Warning: Failed to darken image: {e}")
+        return darkened.convert_alpha() if has_alpha and not (darkened.get_flags() & pygame.SRCALPHA) else darkened
+    except Exception:
         return image if image else None
 
 fly_img, _ = load_image(f"{SPRITES_DIR}/fly/fly.png", convert_alpha=True)
@@ -220,93 +224,51 @@ ground_tile_main_raw, ground_tile_main_loaded = load_image(f"{ground_tiles_dir}/
 ground_tile_corner_raw, ground_tile_corner_loaded = load_image(f"{ground_tiles_dir}/tile_r1_c3.png")
 ground_tile_left_corner_raw, ground_tile_left_corner_loaded = load_image(f"{ground_tiles_dir}/tile_r1_c1.png")
 
-# Scale ground tiles and darken them
-GROUND_TILE_DARKEN_FACTOR = 0.7  # Darken ground tiles to match theme
-if ground_tile_upper_loaded and ground_tile_upper_raw:
-    try:
-        original_size = ground_tile_upper_raw.get_size()
-        scaled = pygame.transform.scale(
-            ground_tile_upper_raw,
-            (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
-        )
-        ground_tile_upper = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
-        # Ensure we have a valid image
-        if not ground_tile_upper:
-            ground_tile_upper = scaled
-    except Exception as e:
-        print(f"Error processing ground_tile_upper: {e}")
-        ground_tile_upper = None
-else:
-    ground_tile_upper = None
+# Scale and darken ground tiles
+GROUND_TILE_DARKEN_FACTOR = 0.7
 
-if ground_tile_main_loaded and ground_tile_main_raw:
-    original_size = ground_tile_main_raw.get_size()
-    scaled = pygame.transform.scale(
-        ground_tile_main_raw,
-        (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
-    )
-    ground_tile_main = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
-else:
-    ground_tile_main = None
+def scale_and_darken_tile(raw_img, scale, darken_factor):
+    if not raw_img:
+        return None
+    size = raw_img.get_size()
+    scaled = pygame.transform.scale(raw_img, (int(size[0] * scale), int(size[1] * scale)))
+    return darken_image(scaled, darken_factor) or scaled
 
-if ground_tile_corner_loaded and ground_tile_corner_raw:
-    original_size = ground_tile_corner_raw.get_size()
-    scaled = pygame.transform.scale(
-        ground_tile_corner_raw,
-        (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
-    )
-    ground_tile_corner = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
-else:
-    ground_tile_corner = None
-
-if ground_tile_left_corner_loaded and ground_tile_left_corner_raw:
-    original_size = ground_tile_left_corner_raw.get_size()
-    scaled = pygame.transform.scale(
-        ground_tile_left_corner_raw,
-        (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
-    )
-    ground_tile_left_corner = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
-else:
-    ground_tile_left_corner = None
+ground_tile_upper = scale_and_darken_tile(ground_tile_upper_raw, GROUND_TILE_SCALE, GROUND_TILE_DARKEN_FACTOR) if ground_tile_upper_loaded else None
+ground_tile_main = scale_and_darken_tile(ground_tile_main_raw, GROUND_TILE_SCALE, GROUND_TILE_DARKEN_FACTOR) if ground_tile_main_loaded else None
+ground_tile_corner = scale_and_darken_tile(ground_tile_corner_raw, GROUND_TILE_SCALE, GROUND_TILE_DARKEN_FACTOR) if ground_tile_corner_loaded else None
+ground_tile_left_corner = scale_and_darken_tile(ground_tile_left_corner_raw, GROUND_TILE_SCALE, GROUND_TILE_DARKEN_FACTOR) if ground_tile_left_corner_loaded else None
 
 # Load tree images
 tree_images = None
 tree_loaded = False
 tree_width, tree_height = 150, 250
-try:
-    tree_left, _ = load_image(f"{SPRITES_DIR}/trees/tree_left_final_clean2.png", convert_alpha=True)
-    tree_middle, _ = load_image(f"{SPRITES_DIR}/trees/tree_middle_final_clean2.png", convert_alpha=True)
-    tree_right, _ = load_image(f"{SPRITES_DIR}/trees/tree_right_final_clean2.png", convert_alpha=True)
-    if tree_left and tree_middle and tree_right:
-        tree_left = pygame.transform.scale(tree_left, (tree_width, tree_height))
-        tree_middle = pygame.transform.scale(tree_middle, (tree_width, tree_height))
-        tree_right = pygame.transform.scale(tree_right, (tree_width, tree_height))
-        tree_images = [tree_left, tree_middle, tree_right]
-        tree_loaded = True
-except:
-    pass
+tree_left, _ = load_image(f"{SPRITES_DIR}/trees/tree_left_final_clean2.png", convert_alpha=True)
+tree_middle, _ = load_image(f"{SPRITES_DIR}/trees/tree_middle_final_clean2.png", convert_alpha=True)
+tree_right, _ = load_image(f"{SPRITES_DIR}/trees/tree_right_final_clean2.png", convert_alpha=True)
+if tree_left and tree_middle and tree_right:
+    tree_images = [
+        pygame.transform.scale(tree_left, (tree_width, tree_height)),
+        pygame.transform.scale(tree_middle, (tree_width, tree_height)),
+        pygame.transform.scale(tree_right, (tree_width, tree_height))
+    ]
+    tree_loaded = True
+
+# Load plant for water
+plant_img, plant_loaded = load_image(f"{SPRITES_DIR}/trees/plant_for_water_big.png", convert_alpha=True)
+# Load red plant for water (background layer)
+plant_red_img, plant_red_loaded = load_image(f"{SPRITES_DIR}/trees/plant_for_water_big_red.png", convert_alpha=True)
 
 # Load tongue sprites
 tongue_frames = []
-tongue_loaded = False
-tongue_paths = [
-    "tongues_split_pngs",
-    f"{SPRITES_DIR}/frog/tongue"  # place tongue pictures in /assets/sprites/frog/tongue
-]
-
-for tongue_dir in tongue_paths:
-    if os.path.exists(tongue_dir):
-        for i in range(1, 9):  # tongue_01.png to tongue_08.png
-            path = f"{SPRITES_DIR}/frog/tongue/tongue_{i:02d}.png"
-            if os.path.exists(path):
-                try:
-                    frame = pygame.image.load(path).convert_alpha()
-                    tongue_frames.append(frame)
-                except:
-                    pass
-        if tongue_frames:
-            tongue_loaded = True
-            break
+tongue_path = f"{SPRITES_DIR}/frog/tongue"
+for i in range(1, 9):
+    path = f"{tongue_path}/tongue_{i:02d}.png"
+    if os.path.exists(path):
+        frame, loaded = load_image(path, convert_alpha=True)
+        if loaded and frame:
+            tongue_frames.append(frame)
+tongue_loaded = len(tongue_frames) > 0
 
 # Load frog sprites
 frog_frames = {
@@ -322,18 +284,28 @@ for anim_type in ["standing", "walk", "jump"]:
         for direction in ["left", "right"]:
             key = f"{anim_type.replace('standing', 'idle')}_{direction}"
             path = f"{SPRITES_DIR}/frog/{anim_type}_{direction}_f{i}.png"
-            if os.path.exists(path):
-                try:
-                    frame = pygame.image.load(path).convert_alpha()
-                    frog_frames[key].append(frame)
-                except:
-                    pass
+            frame, loaded = load_image(path, convert_alpha=True)
+            if loaded and frame:
+                frog_frames[key].append(frame)
 
 sprite_sheet_loaded = any(len(frames) > 0 for frames in frog_frames.values())
+
+# Load dying frames
+dying_frames = []
+dying_frames_dir = f"{SPRITES_DIR}/frog/dead_frog_two_frames"
+for i in range(1, 3):
+    path = f"{dying_frames_dir}/dead_frog_frame_{i}.png"
+    frame, loaded = load_image(path, convert_alpha=True)
+    if loaded and frame:
+        dying_frames.append(frame)
+dying_frames_loaded = len(dying_frames) > 0
 
 # Animation state
 animation_frames = {key: 0 for key in frog_frames.keys()} if sprite_sheet_loaded else {}
 animation_timers = {key: 0 for key in frog_frames.keys()} if sprite_sheet_loaded else {}
+dying_frame_index = 0
+dying_animation_timer = 0
+DYING_ANIMATION_SPEED = 200  # milliseconds per frame
 current_animation = "idle_right"
 
 # Load pixel font
@@ -343,11 +315,9 @@ default_char_width, default_char_height = 20, 20
 
 for char in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ":
     path = f"{ASSETS_DIR}/pixel_font/{char}.png"
-    if os.path.exists(path):
-        try:
-            pixel_font_images[char] = pygame.image.load(path).convert_alpha()
-        except:
-            pass
+    img, loaded = load_image(path, convert_alpha=True)
+    if loaded and img:
+        pixel_font_images[char] = img
 
 if pixel_font_images:
     pixel_font_loaded = True
@@ -375,6 +345,16 @@ pause_menu_y = -500
 pause_menu_target_y = None
 pause_menu_slide_speed = 15
 pause_menu_visible = False
+
+# Settings menu state
+settings_open = False
+settings_menu_y = -500
+settings_menu_target_y = None
+settings_menu_slide_speed = 15
+settings_menu_visible = False
+# Slider dragging state
+music_slider_dragging = False
+sfx_slider_dragging = False
 
 # --- GAME END STATE (timer ended) ---
 game_end = False
@@ -434,17 +414,20 @@ character = {
 }
 
 def reset_game():
-    global score, score_animation_time, timer_start_time, timer_remaining, flies, game_end, total_paused_time
+    global score, score_animation_time, timer_start_time, timer_remaining, flies, game_end, total_paused_time, dying_frame_index, dying_animation_timer
     score = 0
     score_animation_time = 0
     timer_start_time = pygame.time.get_ticks()
     timer_remaining = TIMER_START_SECONDS
-    total_paused_time = 0  # Reset paused time on game reset
-    total_paused_time = 0  # Reset paused time on game reset
+    total_paused_time = 0
     game_end = False
     game_end_menu_y = -500
     game_end_menu_visible = False
     game_end_menu_target_y = None
+    
+    # Reset dying animation
+    dying_frame_index = 0
+    dying_animation_timer = 0
 
     character["x"] = SCREEN_WIDTH // 2
     character["y"] = GROUND_Y - 30 + sprite_padding_offset
@@ -506,7 +489,7 @@ def draw_pixel_text(surface, text, x, y, scale=1.0, color=None):
 def draw_pause_menu(surface, menu_y):
     """Draw the pause menu with wooden sign"""
     if not wooden_sign_loaded or not wooden_sign_img:
-        return None, None, None, None
+        return None, None, None, None, None
 
     sign_width = wooden_sign_img.get_width()
     sign_height = wooden_sign_img.get_height()
@@ -571,20 +554,150 @@ def draw_pause_menu(surface, menu_y):
         draw_pixel_text(surface, settings_text, settings_x, settings_y, scale=settings_scale, color=settings_color)
         settings_rect = pygame.Rect(settings_x, settings_y, settings_width, int(default_char_height * settings_scale))
 
+        main_menu_text = "MAIN MENU"
+        main_menu_scale = 0.35
+        main_menu_width = len(main_menu_text) * int(default_char_width * main_menu_scale) + (len(main_menu_text) - 1) * 2
+        main_menu_x = sign_x + (scaled_width - main_menu_width) // 2
+        main_menu_y = text_start_y + text_spacing * 5.8
+        main_menu_hover = (main_menu_x <= mouse_x <= main_menu_x + main_menu_width and
+                          main_menu_y <= mouse_y <= main_menu_y + int(default_char_height * main_menu_scale))
+        main_menu_color = (200, 255, 200) if main_menu_hover else (255, 255, 255)
+        draw_pixel_text(surface, main_menu_text, main_menu_x, main_menu_y, scale=main_menu_scale, color=main_menu_color)
+        main_menu_rect = pygame.Rect(main_menu_x, main_menu_y, main_menu_width, int(default_char_height * main_menu_scale))
+
         exit_text = "EXIT GAME"
         exit_scale = 0.35
         exit_width = len(exit_text) * int(default_char_width * exit_scale) + (len(exit_text) - 1) * 2
         exit_x = sign_x + (scaled_width - exit_width) // 2
-        exit_y = text_start_y + text_spacing * 5.8
+        exit_y = text_start_y + text_spacing * 6.8
         exit_hover = (exit_x <= mouse_x <= exit_x + exit_width and
                       exit_y <= mouse_y <= exit_y + int(default_char_height * exit_scale))
         exit_color = (255, 200, 200) if exit_hover else (255, 255, 255)
         draw_pixel_text(surface, exit_text, exit_x, exit_y, scale=exit_scale, color=exit_color)
         exit_rect = pygame.Rect(exit_x, exit_y, exit_width, int(default_char_height * exit_scale))
 
-        return continue_rect, settings_rect, exit_rect, (sign_x, sign_y, scaled_width, scaled_height)
+        return continue_rect, settings_rect, main_menu_rect, exit_rect, (sign_x, sign_y, scaled_width, scaled_height)
 
     return None, None, None, None
+
+def draw_settings_menu(surface, menu_y):
+    """Draw the settings menu with wooden sign"""
+    if not wooden_sign_loaded or not wooden_sign_img:
+        return None, None, None, None, None, None, None
+
+    sign_width = wooden_sign_img.get_width()
+    sign_height = wooden_sign_img.get_height()
+    scale_factor = min(SCREEN_WIDTH * 0.6 / sign_width, SCREEN_HEIGHT * 0.6 / sign_height)
+    scaled_width = int(sign_width * scale_factor)
+    scaled_height = int(sign_height * scale_factor)
+    scaled_sign = pygame.transform.scale(wooden_sign_img, (scaled_width, scaled_height))
+
+    sign_x = (SCREEN_WIDTH - scaled_width) // 2
+    sign_y = menu_y
+    surface.blit(scaled_sign, (sign_x, sign_y))
+
+    text_start_y = sign_y + int(scaled_height * 0.15)
+    text_spacing = int(scaled_height * 0.1)
+
+    if pixel_font_loaded:
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        
+        # Title
+        title_text = "SETTINGS"
+        title_scale = 0.45
+        title_width = len(title_text) * int(default_char_width * title_scale) + (len(title_text) - 1) * 2
+        title_x = sign_x + (scaled_width - title_width) // 2
+        draw_pixel_text(surface, title_text, title_x, text_start_y, scale=title_scale, color=(255, 255, 255))
+
+        # Music Volume
+        music_text = f"MUSIC: {int(settings['sound']['music'] * 100)}%"
+        music_scale = 0.3
+        music_width = len(music_text) * int(default_char_width * music_scale) + (len(music_text) - 1) * 2
+        music_x = sign_x + (scaled_width - music_width) // 2
+        music_y = text_start_y + text_spacing * 2
+        draw_pixel_text(surface, music_text, music_x, music_y, scale=music_scale, color=(255, 255, 255))
+        
+        # Music volume slider
+        vol_bar_width = int(scaled_width * 0.6)
+        vol_bar_height = 20
+        vol_bar_x = sign_x + (scaled_width - vol_bar_width) // 2
+        vol_bar_y = music_y + int(default_char_height * music_scale) + 10
+        
+        # Volume bar background
+        pygame.draw.rect(surface, (100, 100, 100), (vol_bar_x, vol_bar_y, vol_bar_width, vol_bar_height))
+        # Volume bar fill
+        fill_width = int(vol_bar_width * settings["sound"]["music"])
+        pygame.draw.rect(surface, (100, 200, 100), (vol_bar_x, vol_bar_y, fill_width, vol_bar_height))
+        
+        # Slider handle
+        handle_width = 15
+        handle_height = vol_bar_height + 8
+        handle_x = vol_bar_x + fill_width - handle_width // 2
+        handle_y = vol_bar_y - 4
+        handle_rect = pygame.Rect(handle_x, handle_y, handle_width, handle_height)
+        handle_hover = handle_rect.collidepoint(mouse_x, mouse_y) or music_slider_dragging
+        handle_color = (150, 255, 150) if handle_hover else (200, 200, 200)
+        pygame.draw.rect(surface, handle_color, handle_rect)
+        pygame.draw.rect(surface, (255, 255, 255), handle_rect, 2)
+        
+        # Make entire bar clickable
+        music_slider_rect = pygame.Rect(vol_bar_x, vol_bar_y - 10, vol_bar_width, vol_bar_height + 20)
+
+        # SFX Volume
+        sfx_text = f"SFX: {int(settings['sound']['sfx'] * 100)}%"
+        sfx_scale = 0.3
+        sfx_width = len(sfx_text) * int(default_char_width * sfx_scale) + (len(sfx_text) - 1) * 2
+        sfx_x = sign_x + (scaled_width - sfx_width) // 2
+        sfx_y = vol_bar_y + vol_bar_height + text_spacing * 1.5
+        draw_pixel_text(surface, sfx_text, sfx_x, sfx_y, scale=sfx_scale, color=(255, 255, 255))
+        
+        # SFX volume slider
+        sfx_vol_bar_x = vol_bar_x
+        sfx_vol_bar_y = sfx_y + int(default_char_height * sfx_scale) + 10
+        
+        # SFX Volume bar background
+        pygame.draw.rect(surface, (100, 100, 100), (sfx_vol_bar_x, sfx_vol_bar_y, vol_bar_width, vol_bar_height))
+        # SFX Volume bar fill
+        sfx_fill_width = int(vol_bar_width * settings["sound"]["sfx"])
+        pygame.draw.rect(surface, (100, 200, 100), (sfx_vol_bar_x, sfx_vol_bar_y, sfx_fill_width, vol_bar_height))
+        
+        # SFX Slider handle
+        sfx_handle_x = sfx_vol_bar_x + sfx_fill_width - handle_width // 2
+        sfx_handle_y = sfx_vol_bar_y - 4
+        sfx_handle_rect = pygame.Rect(sfx_handle_x, sfx_handle_y, handle_width, handle_height)
+        sfx_handle_hover = sfx_handle_rect.collidepoint(mouse_x, mouse_y) or sfx_slider_dragging
+        sfx_handle_color = (150, 255, 150) if sfx_handle_hover else (200, 200, 200)
+        pygame.draw.rect(surface, sfx_handle_color, sfx_handle_rect)
+        pygame.draw.rect(surface, (255, 255, 255), sfx_handle_rect, 2)
+        
+        # Make entire bar clickable
+        sfx_slider_rect = pygame.Rect(sfx_vol_bar_x, sfx_vol_bar_y - 10, vol_bar_width, vol_bar_height + 20)
+
+        # Mute toggle
+        mute_text = "MUTE: " + ("ON" if settings["sound"]["muted"] else "OFF")
+        mute_scale = 0.3
+        mute_width = len(mute_text) * int(default_char_width * mute_scale) + (len(mute_text) - 1) * 2
+        mute_x = sign_x + (scaled_width - mute_width) // 2
+        mute_y = sfx_vol_bar_y + vol_bar_height + text_spacing * 1.5
+        mute_hover = (mute_x <= mouse_x <= mute_x + mute_width and mute_y <= mouse_y <= mute_y + int(default_char_height * mute_scale))
+        mute_color = (200, 255, 200) if mute_hover else (255, 255, 255)
+        draw_pixel_text(surface, mute_text, mute_x, mute_y, scale=mute_scale, color=mute_color)
+        mute_rect = pygame.Rect(mute_x, mute_y, mute_width, int(default_char_height * mute_scale))
+
+        # Back button
+        back_text = "BACK"
+        back_scale = 0.35
+        back_width = len(back_text) * int(default_char_width * back_scale) + (len(back_text) - 1) * 2
+        back_x = sign_x + (scaled_width - back_width) // 2
+        back_y = mute_y + text_spacing * 2.5
+        back_hover = (back_x <= mouse_x <= back_x + back_width and back_y <= mouse_y <= back_y + int(default_char_height * back_scale))
+        back_color = (200, 255, 200) if back_hover else (255, 255, 255)
+        draw_pixel_text(surface, back_text, back_x, back_y, scale=back_scale, color=back_color)
+        back_rect = pygame.Rect(back_x, back_y, back_width, int(default_char_height * back_scale))
+
+        return music_slider_rect, sfx_slider_rect, mute_rect, back_rect, vol_bar_x, vol_bar_width, sfx_vol_bar_x
+
+    return None, None, None, None, None, None, None
 
 def draw_game_end_menu(surface, menu_y):
     """Draw the game end menu with wooden sign"""
@@ -665,9 +778,6 @@ def draw_game_end_menu(surface, menu_y):
 
     return None, None, None
 
-def refresh_keybinds(self):
-    self._cached_keybinds = self.get_keybinds()
-
 # Main game loop
 running = True
 if timer_start_time is None:
@@ -678,7 +788,7 @@ while running:
     current_time = pygame.time.get_ticks()
 
     # Handle pause menu animation
-    if paused:
+    if paused and not settings_open:
         if pause_menu_target_y is None and wooden_sign_loaded and wooden_sign_img:
             pause_menu_target_y = 0
 
@@ -697,6 +807,27 @@ while running:
                 pause_menu_y = -500
                 pause_menu_visible = False
                 pause_menu_target_y = None
+
+    # Handle settings menu animation
+    if settings_open:
+        if settings_menu_target_y is None and wooden_sign_loaded and wooden_sign_img:
+            settings_menu_target_y = 0
+
+        if settings_menu_target_y is not None:
+            if settings_menu_y < settings_menu_target_y:
+                settings_menu_y += settings_menu_slide_speed
+                if settings_menu_y >= settings_menu_target_y:
+                    settings_menu_y = settings_menu_target_y
+                    settings_menu_visible = True
+            else:
+                settings_menu_visible = True
+    else:
+        if settings_menu_y > -500:
+            settings_menu_y -= settings_menu_slide_speed
+            if settings_menu_y <= -500:
+                settings_menu_y = -500
+                settings_menu_visible = False
+                settings_menu_target_y = None
 
     # Handle game end menu animation
     if game_end:
@@ -749,7 +880,13 @@ while running:
             running = False
 
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            if not game_over:
+            if settings_open:
+                # Close settings menu and return to pause menu
+                settings_open = False
+                settings_menu_y = -500
+                settings_menu_visible = False
+                settings_menu_target_y = None
+            elif not game_over:
                 paused = not paused
                 if paused:
                     pause_start_time = current_time
@@ -762,10 +899,23 @@ while running:
                         pause_start_time = 0
                     pause_menu_y = -500
                     pause_menu_visible = False
+                    pause_menu_target_y = None
+
+        elif event.type == pygame.KEYDOWN and (event.key == pygame.K_SPACE or event.key == pygame.K_UP or event.key == pygame.K_w):
+            if not paused and not game_end and not game_over:
+                sfx_vol = 0.0 if settings["sound"]["muted"] else settings["sound"]["sfx"]
+                sound.play("jump", sfx_vol)
+                if character["on_ground"]:
+                    character["velocity_y"] = character["jump_speed"]
+                    character["on_ground"] = False
+                elif not character["on_ground"] and character["has_double_jump"] and current_time >= character["double_jump_cooldown_end"]:
+                    character["velocity_y"] = character["jump_speed"]
+                    character["has_double_jump"] = False
+                    character["double_jump_cooldown_end"] = current_time + 500
 
         elif paused and pause_menu_visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_x, mouse_y = pygame.mouse.get_pos()
-            continue_rect, settings_rect, exit_rect, _ = draw_pause_menu(screen, pause_menu_y)
+            continue_rect, settings_rect, main_menu_rect, exit_rect, _ = draw_pause_menu(screen, pause_menu_y)
 
             if continue_rect and continue_rect.collidepoint(mouse_x, mouse_y):
                 # When unpausing, add the paused duration to total_paused_time
@@ -776,10 +926,69 @@ while running:
                 pause_menu_y = -500
                 pause_menu_visible = False
             elif settings_rect and settings_rect.collidepoint(mouse_x, mouse_y):
-                # TODO: Implement settings menu
-                pass
+                settings_open = True
+                settings_menu_y = -500
+                settings_menu_target_y = None
+                settings_menu_visible = False
+            elif main_menu_rect and main_menu_rect.collidepoint(mouse_x, mouse_y):
+                # Launch frontpage and exit game
+                FRONTPAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+                FRONTPAGE_PATH = os.path.join(FRONTPAGE_DIR, "frontpage.py")
+                PROJECT_ROOT = os.path.dirname(FRONTPAGE_DIR)
+                if os.path.exists(FRONTPAGE_PATH):
+                    subprocess.Popen([sys.executable, os.path.abspath(FRONTPAGE_PATH)], cwd=PROJECT_ROOT)
+                running = False
             elif exit_rect and exit_rect.collidepoint(mouse_x, mouse_y):
                 running = False
+
+        elif settings_open and settings_menu_visible:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            result = draw_settings_menu(screen, settings_menu_y)
+            if result:
+                music_slider_rect, sfx_slider_rect, mute_rect, back_rect, vol_bar_x, vol_bar_width, sfx_vol_bar_x = result
+            else:
+                music_slider_rect = sfx_slider_rect = mute_rect = back_rect = vol_bar_x = vol_bar_width = sfx_vol_bar_x = None
+            
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if music_slider_rect and music_slider_rect.collidepoint(mouse_x, mouse_y):
+                    music_slider_dragging = True
+                    # Calculate volume based on click position
+                    relative_x = max(0, min(mouse_x - vol_bar_x, vol_bar_width))
+                    settings["sound"]["music"] = relative_x / vol_bar_width
+                    pygame.mixer.music.set_volume(0.0 if settings["sound"]["muted"] else settings["sound"]["music"])
+                    save_settings()
+                elif sfx_slider_rect and sfx_slider_rect.collidepoint(mouse_x, mouse_y):
+                    sfx_slider_dragging = True
+                    # Calculate volume based on click position
+                    relative_x = max(0, min(mouse_x - sfx_vol_bar_x, vol_bar_width))
+                    settings["sound"]["sfx"] = relative_x / vol_bar_width
+                    save_settings()
+                elif mute_rect and mute_rect.collidepoint(mouse_x, mouse_y):
+                    settings["sound"]["muted"] = not settings["sound"]["muted"]
+                    pygame.mixer.music.set_volume(0.0 if settings["sound"]["muted"] else settings["sound"]["music"])
+                    save_settings()
+                elif back_rect and back_rect.collidepoint(mouse_x, mouse_y):
+                    settings_open = False
+                    settings_menu_y = -500
+                    settings_menu_visible = False
+                    settings_menu_target_y = None
+                    music_slider_dragging = False
+                    sfx_slider_dragging = False
+            
+            elif event.type == pygame.MOUSEMOTION:
+                if music_slider_dragging and music_slider_rect:
+                    relative_x = max(0, min(mouse_x - vol_bar_x, vol_bar_width))
+                    settings["sound"]["music"] = relative_x / vol_bar_width
+                    pygame.mixer.music.set_volume(0.0 if settings["sound"]["muted"] else settings["sound"]["music"])
+                    save_settings()
+                elif sfx_slider_dragging and sfx_slider_rect:
+                    relative_x = max(0, min(mouse_x - sfx_vol_bar_x, vol_bar_width))
+                    settings["sound"]["sfx"] = relative_x / vol_bar_width
+                    save_settings()
+            
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                music_slider_dragging = False
+                sfx_slider_dragging = False
 
         elif game_end and game_end_menu_visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -793,9 +1002,11 @@ while running:
                 game_end_menu_target_y = None
             elif main_menu_rect and main_menu_rect.collidepoint(mouse_x, mouse_y):
                 # Launch frontpage and exit game
-                BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-                FRONTPAGE_PATH = os.path.join(BASE_DIR, "frontpage.py")
-                subprocess.Popen([sys.executable, FRONTPAGE_PATH])
+                FRONTPAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+                FRONTPAGE_PATH = os.path.join(FRONTPAGE_DIR, "frontpage.py")
+                PROJECT_ROOT = os.path.dirname(FRONTPAGE_DIR)
+                if os.path.exists(FRONTPAGE_PATH):
+                    subprocess.Popen([sys.executable, os.path.abspath(FRONTPAGE_PATH)], cwd=PROJECT_ROOT)
                 running = False
 
         elif game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -804,8 +1015,9 @@ while running:
                 reset_game()
                 game_over = False
 
-        elif not paused and not game_end and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            sound.play("hit")
+        elif not paused and not game_end and not game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            sfx_vol = 0.0 if settings["sound"]["muted"] else settings["sound"]["sfx"]
+            sound.play("hit", sfx_vol)
             if not character["tongue_extended"]:
                 mouse_x, mouse_y = pygame.mouse.get_pos()
                 frog_center_x = character["x"] + character["width"] // 2
@@ -816,15 +1028,6 @@ while running:
                 character["tongue_length"] = 0
                 character["tongue_end_time"] = current_time + 300
 
-        elif event.type == pygame.KEYDOWN and (event.key == pygame.K_SPACE or event.key == pygame.K_UP or event.key == pygame.K_w):
-            sound.play("jump")
-            if character["on_ground"]:
-                character["velocity_y"] = character["jump_speed"]
-                character["on_ground"] = False
-            elif not character["on_ground"] and character["has_double_jump"] and current_time >= character["double_jump_cooldown_end"]:
-                character["velocity_y"] = character["jump_speed"]
-                character["has_double_jump"] = False
-                character["double_jump_cooldown_end"] = current_time + 500
 
     shake_x, shake_y = 0, 0
     if game_over:
@@ -933,11 +1136,40 @@ while running:
             # Position crocodile a little higher than water tiles
             crocodile_y = GROUND_Y - 10  # Move up by 10 pixels
         
+        # Draw plant in water first (so water tiles and crocodile can overlap it)
+        if plant_loaded and plant_img:
+            plant_width = plant_img.get_width()
+            plant_height = plant_img.get_height()
+            # Center plant horizontally in the swamp
+            plant_x = SWAMP_START_X + (SWAMP_WIDTH - plant_width) // 2
+            # Position plant at the bottom of the water (ground level)
+            plant_y = GROUND_Y + SWAMP_HEIGHT - plant_height
+            
+            # Red plant is not drawn - it's only used for platform collision detection
+            
+            # Draw shadow first (offset down and to the right)
+            shadow_offset_x = 8
+            shadow_offset_y = 8
+            shadow_alpha = 120  # Shadow opacity (0-255)
+            
+            # Create shadow surface from plant's alpha channel
+            shadow_surface = pygame.Surface(plant_img.get_size(), pygame.SRCALPHA)
+            # Create a dark shadow by extracting alpha from plant and applying dark color
+            # Fill with black at the shadow alpha level
+            shadow_surface.fill((0, 0, 0, shadow_alpha))
+            # Use the plant's alpha channel to shape the shadow
+            shadow_surface.blit(plant_img, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            # Draw shadow with offset
+            screen.blit(shadow_surface, (plant_x + shadow_offset_x, plant_y + shadow_offset_y))
+            
+            # Draw plant on top of shadow and red plant
+            screen.blit(plant_img, (plant_x, plant_y))
+        
         # Calculate how many tiles fit in the swamp (add extra to ensure no gaps)
         num_tiles_x = int(math.ceil(SWAMP_WIDTH / tile_width)) + 2
         num_tiles_y = int(math.ceil(SWAMP_HEIGHT / tile_height)) + 2
         
-        # Draw water tiles
+        # Draw water tiles (on top of plant)
         for ty in range(num_tiles_y):
             for tx in range(num_tiles_x):
                 tile_x = SWAMP_START_X + tx * tile_width
@@ -979,7 +1211,7 @@ while running:
                 # Draw tile even if it overlaps with crocodile (crocodile will be drawn on top)
                 screen.blit(current_tile, (tile_x, tile_y))
         
-        # Draw crocodile on top (at top middle)
+        # Draw crocodile on top (at top middle, overlapping plant and water)
         if crocodile_frame_1_loaded and crocodile_frame_2_loaded and crocodile_frame_1 and crocodile_frame_2 and crocodile_width > 0:
             screen.blit(current_crocodile, (crocodile_x, crocodile_y))
     else:
@@ -992,8 +1224,13 @@ while running:
 
     # Trees removed - no longer drawing trees
 
-    # Character movement (only when not paused and not game ended)
-    if not paused and not game_end:
+    # Character death animation - slowly ascend when dead
+    if game_over:
+        # Make character slowly ascend (move upward)
+        character["y"] -= 2  # Move up slowly
+    
+    # Character movement (only when not paused, not game ended, and not game over)
+    if not paused and not game_end and not game_over:
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             character["x"] -= character["speed"]
             character["facing_direction"] = "left"
@@ -1026,7 +1263,75 @@ while running:
         
         on_platform = False
         
-        for platform in platforms:
+        # Add plant platforms based on red parts of red plant image (red plant is invisible, behind regular plant)
+        all_platforms = list(platforms)  # Copy the platforms list
+        if plant_loaded and plant_img and plant_red_loaded and plant_red_img:
+            plant_width = plant_img.get_width()
+            plant_height = plant_img.get_height()
+            plant_x = SWAMP_START_X + (SWAMP_WIDTH - plant_width) // 2
+            plant_y = GROUND_Y + SWAMP_HEIGHT - plant_height
+            
+            # Red plant is positioned behind regular plant (same position, not visible)
+            red_plant_x = plant_x
+            red_plant_y = plant_y
+            
+            # Scan red plant image for red pixels and create platforms
+            # Use get_at() to detect red regions (red parts act as platforms)
+            scan_step = 4  # Scan every 4 pixels for performance
+            platform_segments = []
+            
+            for y in range(0, plant_height, scan_step):
+                current_segment_start = None
+                for x in range(0, plant_width, scan_step):
+                    try:
+                        # Get pixel color at this position
+                        pixel_color = plant_red_img.get_at((x, y))
+                        r, g, b, a = pixel_color
+                        
+                        # Check if pixel is red (R > G and R > B) and visible
+                        if (a > 128 and r > g and r > b and r > 100):
+                            if current_segment_start is None:
+                                current_segment_start = x
+                        else:
+                            # End of red segment
+                            if current_segment_start is not None:
+                                segment_width = (x - current_segment_start) + scan_step
+                                if segment_width >= 12:  # Only add segments wide enough
+                                    platform_segments.append({
+                                        "x": red_plant_x + current_segment_start,
+                                        "y": red_plant_y + y,
+                                        "width": segment_width,
+                                        "height": PLATFORM_HEIGHT
+                                    })
+                                current_segment_start = None
+                    except:
+                        # Skip if pixel is out of bounds
+                        if current_segment_start is not None:
+                            segment_width = (x - current_segment_start) + scan_step
+                            if segment_width >= 12:
+                                platform_segments.append({
+                                    "x": red_plant_x + current_segment_start,
+                                    "y": red_plant_y + y,
+                                    "width": segment_width,
+                                    "height": PLATFORM_HEIGHT
+                                })
+                            current_segment_start = None
+                
+                # Handle segment that extends to end of row
+                if current_segment_start is not None:
+                    segment_width = plant_width - current_segment_start
+                    if segment_width >= 12:
+                        platform_segments.append({
+                            "x": red_plant_x + current_segment_start,
+                            "y": red_plant_y + y,
+                            "width": segment_width,
+                            "height": PLATFORM_HEIGHT
+                        })
+            
+            # Add platform segments to all_platforms
+            all_platforms.extend(platform_segments)
+        
+        for platform in all_platforms:
             platform_rect = pygame.Rect(platform["x"], platform["y"], platform["width"], platform["height"])
             platform_target_y = platform["y"] - character["height"] + sprite_padding_offset
             
@@ -1073,7 +1378,7 @@ while running:
         # After checking collisions, if character is on ground and moving horizontally,
         # keep them on the platform they're standing on (prevents falling off when moving horizontally)
         if on_ground and character["velocity_y"] == 0:
-            for platform in platforms:
+            for platform in all_platforms:
                 # Check if character is horizontally within platform bounds
                 is_horizontally_on_platform = (platform["x"] <= character_center_x <= platform["x"] + platform["width"])
                 
@@ -1094,9 +1399,13 @@ while running:
         if (SWAMP_START_X <= character_center_x <= SWAMP_START_X + SWAMP_WIDTH and
             character_bottom >= GROUND_Y and not on_platform and not game_over):
 
-            sound.play("gameover")
+            sound.play("gameover", settings["sound"]["sfx"] if not settings["sound"]["muted"] else 0.0)
             game_over = True
             game_over_start_time = pygame.time.get_ticks()
+            # Reset dying animation when character dies
+            if dying_frames_loaded:
+                dying_frame_index = 0
+                dying_animation_timer = current_time
 
         # Update tongue (with retract animation)
         if character["tongue_extended"]:
@@ -1139,7 +1448,7 @@ while running:
                                 hit_dot = dot_product
 
                 if hit_idx is not None:
-                    sound.play("eaten")
+                    sound.play("eaten", settings["sound"]["sfx"] if not settings["sound"]["muted"] else 0.0)
 
                     flies.pop(hit_idx)
                     score += 1
@@ -1156,7 +1465,25 @@ while running:
                     character["tongue_retracting"] = True
 
     # Draw character
-    if sprite_sheet_loaded and frog_frames:
+    if game_over and dying_frames_loaded and dying_frames:
+        if current_time - dying_animation_timer >= DYING_ANIMATION_SPEED:
+            dying_animation_timer = current_time
+            dying_frame_index = (dying_frame_index + 1) % len(dying_frames)
+        
+        DYING_SCALE = 1.3
+        dying_width = int(character["width"] * DYING_SCALE)
+        dying_height = int(character["height"] * DYING_SCALE)
+        current_sprite = pygame.transform.scale(dying_frames[dying_frame_index], (dying_width, dying_height))
+        
+        white_sprite = current_sprite.copy()
+        white_overlay = pygame.Surface(white_sprite.get_size(), pygame.SRCALPHA)
+        white_overlay.fill((255, 255, 255, 255))
+        white_sprite.blit(white_overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        
+        offset_x = (character["width"] - dying_width) // 2
+        offset_y = (character["height"] - dying_height) // 2
+        screen.blit(white_sprite, (character["x"] + offset_x, character["y"] + offset_y))
+    elif sprite_sheet_loaded and frog_frames:
         direction = character["facing_direction"]
         if not character["on_ground"]:
             animation_key = f"jump_{direction}"
@@ -1312,12 +1639,20 @@ while running:
         draw_pixel_text(screen, score_text, score_x, 20, scale=scale)
 
     # Draw pause menu
-    if paused:
+    if paused and not settings_open:
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         overlay.set_alpha(180)
         overlay.fill((0, 0, 0))
         screen.blit(overlay, (0, 0))
         draw_pause_menu(screen, pause_menu_y)
+
+    # Draw settings menu
+    if settings_open:
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+        draw_settings_menu(screen, settings_menu_y)
 
     # Draw game end menu (timer ended)
     if game_end:

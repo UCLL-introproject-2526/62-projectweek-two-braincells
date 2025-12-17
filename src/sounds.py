@@ -18,8 +18,10 @@ class SoundManager:
             "gameover": pygame.mixer.Sound(os.path.join(SOUND_DIR, "game_over.mp3")),
         }
 
-    def play(self, name):
+    def play(self, name, volume=None):
         if name in self.sounds:
+            if volume is not None:
+                self.sounds[name].set_volume(volume)
             self.sounds[name].play()
 
     def play_music(self):

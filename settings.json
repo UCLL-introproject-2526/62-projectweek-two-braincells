@@ -1,14 +1,7 @@
 {
-  "keybinds": {
-    "left": "K_a",
-    "right": "K_s",
-    "jump": "K_SPACE",
-    "tongue": "K_LCTRL",
-    "pause": "K_ESCAPE"
-  },
   "sound": {
-    "music": 0.4775,
-    "sfx": 0.5,
-    "muted": true
+    "music": 0.37722419928825623,
+    "sfx": 0.5160142348754448,
+    "muted": false
   }
 }
