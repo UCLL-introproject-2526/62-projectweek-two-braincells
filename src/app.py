@@ -38,7 +38,7 @@ platforms = [
     {"x": int(SCREEN_WIDTH * 0.50), "y": GROUND_Y - 140, "width": 100, "height": PLATFORM_HEIGHT},
 
     # Platform over swamp
-   # {"x": PLATFORM_X, "y": PLATFORM_Y, "width": PLATFORM_WIDTH, "height": PLATFORM_HEIGHT},
+    {"x": PLATFORM_X, "y": PLATFORM_Y, "width": PLATFORM_WIDTH, "height": PLATFORM_HEIGHT},
 
     # Right side platforms (evenly spaced)
     {"x": SWAMP_START_X + SWAMP_WIDTH + int(SCREEN_WIDTH * 0.02), "y": GROUND_Y - 120, "width": 100, "height": PLATFORM_HEIGHT},
@@ -56,9 +56,15 @@ NUM_FLIES = 6
 TIMER_START_SECONDS = 90
 SCORE_ANIMATION_DURATION = 200
 ANIMATION_SPEED = 150
-BASE_DIR = os.getcwd()
+# Get the directory where this script is located, then go up one level to project root
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 SPRITES_DIR = os.path.join(ASSETS_DIR, "sprites")
+
+# Debug: Print paths to verify they're correct
+print(f"BASE_DIR: {BASE_DIR}")
+print(f"ASSETS_DIR: {ASSETS_DIR}")
+print(f"ASSETS_DIR exists: {os.path.exists(ASSETS_DIR)}")
 
 # Colors
 BG_COLOR = (135, 206, 250)
@@ -69,20 +75,51 @@ PLATFORM_COLOR = (105, 85, 65)
 # Load images
 def load_image(path, convert_alpha=False):
     try:
+        # Check if file exists
+        if not os.path.exists(path):
+            print(f"Warning: Image file not found: {path}")
+            return None, False
         img = pygame.image.load(path)
         return img.convert_alpha() if convert_alpha else img.convert(), True
-    except:
+    except Exception as e:
+        print(f"Error loading image {path}: {e}")
         return None, False
 
 def darken_image(image, factor=0.7):
     """Darken an image by a factor (0.0 = black, 1.0 = original)"""
     if not image:
         return None
-    darkened = image.copy()
-    overlay = pygame.Surface(image.get_size())
-    overlay.fill((int(255 * factor), int(255 * factor), int(255 * factor)))
-    darkened.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-    return darkened
+    try:
+        # Make a copy to avoid modifying the original, preserving format
+        darkened = image.copy()
+        
+        # Get the original format flags
+        has_alpha = image.get_flags() & pygame.SRCALPHA
+        
+        # Create a darkening surface matching the image format
+        if has_alpha:
+            dark_surface = pygame.Surface(darkened.get_size(), pygame.SRCALPHA)
+            dark_surface.fill((int(255 * factor), int(255 * factor), int(255 * factor), 255))
+        else:
+            # For non-alpha images, create surface and convert to match
+            dark_surface = pygame.Surface(darkened.get_size())
+            dark_surface.fill((int(255 * factor), int(255 * factor), int(255 * factor)))
+            dark_surface = dark_surface.convert(darkened)
+        
+        # Apply darkening
+        darkened.blit(dark_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        
+        # Ensure output format matches input
+        if has_alpha and not (darkened.get_flags() & pygame.SRCALPHA):
+            darkened = darkened.convert_alpha()
+        elif not has_alpha and (darkened.get_flags() & pygame.SRCALPHA):
+            darkened = darkened.convert()
+        
+        return darkened
+    except Exception as e:
+        # If darkening fails, return original image (never return None)
+        print(f"Warning: Failed to darken image: {e}")
+        return image if image else None
 
 fly_img, _ = load_image(f"{SPRITES_DIR}/fly/fly.png", convert_alpha=True)
 background_img, background_loaded = load_image(f"{ASSETS_DIR}/background.png")
@@ -145,15 +182,24 @@ crocodile_frames_dir = os.path.join(ASSETS_DIR, "sprites", "crocodile_frames")
 crocodile_frame_1_raw, crocodile_frame_1_loaded = load_image(f"{crocodile_frames_dir}/crocodile_frame_1.png", convert_alpha=True)
 crocodile_frame_2_raw, crocodile_frame_2_loaded = load_image(f"{crocodile_frames_dir}/crocodile_frame_2.png", convert_alpha=True)
 
-# Darken crocodile frames to match theme
+# Scale and darken crocodile frames to match theme (same pattern as water tiles)
+CROCODILE_SCALE = WATER_TILE_SCALE  # Same scale as water tiles
 CROCODILE_DARKEN_FACTOR = 0.75  # Darken crocodile to match theme
 if crocodile_frame_1_loaded and crocodile_frame_1_raw:
-    crocodile_frame_1 = darken_image(crocodile_frame_1_raw, CROCODILE_DARKEN_FACTOR)
+    original_size = crocodile_frame_1_raw.get_size()
+    scaled = pygame.transform.smoothscale(crocodile_frame_1_raw,
+                                         (int(original_size[0] * CROCODILE_SCALE),
+                                          int(original_size[1] * CROCODILE_SCALE)))
+    crocodile_frame_1 = darken_image(scaled, CROCODILE_DARKEN_FACTOR)
 else:
     crocodile_frame_1 = None
 
 if crocodile_frame_2_loaded and crocodile_frame_2_raw:
-    crocodile_frame_2 = darken_image(crocodile_frame_2_raw, CROCODILE_DARKEN_FACTOR)
+    original_size = crocodile_frame_2_raw.get_size()
+    scaled = pygame.transform.smoothscale(crocodile_frame_2_raw,
+                                         (int(original_size[0] * CROCODILE_SCALE),
+                                          int(original_size[1] * CROCODILE_SCALE)))
+    crocodile_frame_2 = darken_image(scaled, CROCODILE_DARKEN_FACTOR)
 else:
     crocodile_frame_2 = None
 
@@ -177,12 +223,19 @@ ground_tile_left_corner_raw, ground_tile_left_corner_loaded = load_image(f"{grou
 # Scale ground tiles and darken them
 GROUND_TILE_DARKEN_FACTOR = 0.7  # Darken ground tiles to match theme
 if ground_tile_upper_loaded and ground_tile_upper_raw:
-    original_size = ground_tile_upper_raw.get_size()
-    scaled = pygame.transform.scale(
-        ground_tile_upper_raw,
-        (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
-    )
-    ground_tile_upper = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
+    try:
+        original_size = ground_tile_upper_raw.get_size()
+        scaled = pygame.transform.scale(
+            ground_tile_upper_raw,
+            (int(original_size[0] * GROUND_TILE_SCALE), int(original_size[1] * GROUND_TILE_SCALE))
+        )
+        ground_tile_upper = darken_image(scaled, GROUND_TILE_DARKEN_FACTOR)
+        # Ensure we have a valid image
+        if not ground_tile_upper:
+            ground_tile_upper = scaled
+    except Exception as e:
+        print(f"Error processing ground_tile_upper: {e}")
+        ground_tile_upper = None
 else:
     ground_tile_upper = None
 
@@ -317,6 +370,7 @@ shake_magnitude = 20
 # --- PAUSE STATE ---
 paused = False
 pause_start_time = 0
+total_paused_time = 0  # Track total time spent paused (in milliseconds)
 pause_menu_y = -500
 pause_menu_target_y = None
 pause_menu_slide_speed = 15
@@ -380,11 +434,13 @@ character = {
 }
 
 def reset_game():
-    global score, score_animation_time, timer_start_time, timer_remaining, flies, game_end
+    global score, score_animation_time, timer_start_time, timer_remaining, flies, game_end, total_paused_time
     score = 0
     score_animation_time = 0
     timer_start_time = pygame.time.get_ticks()
     timer_remaining = TIMER_START_SECONDS
+    total_paused_time = 0  # Reset paused time on game reset
+    total_paused_time = 0  # Reset paused time on game reset
     game_end = False
     game_end_menu_y = -500
     game_end_menu_visible = False
@@ -665,16 +721,25 @@ while running:
         crocodile_animation_timer = current_time
         crocodile_frame = 1 - crocodile_frame  # Toggle between 0 and 1
 
-    # Skip game updates when paused or game ended
-    if not paused and not game_end:
-        # Update timer
-        elapsed_seconds = (current_time - timer_start_time) // 1000
+    # Skip game updates when paused, game ended, or game over
+    if not paused and not game_end and not game_over:
+        # Update timer (subtract total paused time to account for pauses)
+        elapsed_seconds = (current_time - timer_start_time - total_paused_time) // 1000
         timer_remaining = max(0, TIMER_START_SECONDS - elapsed_seconds)
         if timer_remaining <= 0 and not game_end:
             game_end = True
             game_end_start_time = current_time
             game_end_menu_y = -500
             game_end_menu_visible = False
+    elif paused:
+        # When paused, also account for current pause session in timer calculation
+        current_pause_duration = current_time - pause_start_time if pause_start_time > 0 else 0
+        elapsed_seconds = (current_time - timer_start_time - total_paused_time - current_pause_duration) // 1000
+        timer_remaining = max(0, TIMER_START_SECONDS - elapsed_seconds)
+    elif game_over:
+        # When game over, timer stops - don't update it
+        # Timer remains at the value it had when game_over was set
+        pass
 
     keys = pygame.key.get_pressed()
 
@@ -691,6 +756,10 @@ while running:
                     pause_menu_y = -500
                     pause_menu_visible = False
                 else:
+                    # When unpausing, add the paused duration to total_paused_time
+                    if pause_start_time > 0:
+                        total_paused_time += current_time - pause_start_time
+                        pause_start_time = 0
                     pause_menu_y = -500
                     pause_menu_visible = False
 
@@ -699,6 +768,10 @@ while running:
             continue_rect, settings_rect, exit_rect, _ = draw_pause_menu(screen, pause_menu_y)
 
             if continue_rect and continue_rect.collidepoint(mouse_x, mouse_y):
+                # When unpausing, add the paused duration to total_paused_time
+                if pause_start_time > 0:
+                    total_paused_time += current_time - pause_start_time
+                    pause_start_time = 0
                 paused = False
                 pause_menu_y = -500
                 pause_menu_visible = False
@@ -761,7 +834,7 @@ while running:
             shake_y = random.randint(-shake_magnitude, shake_magnitude)
 
     # Draw background
-    if background_loaded:
+    if background_loaded and background_img:
         if background_img.get_size() != (SCREEN_WIDTH, SCREEN_HEIGHT):
             screen.blit(pygame.transform.scale(background_img, (SCREEN_WIDTH, SCREEN_HEIGHT)), (shake_x, shake_y))
         else:
@@ -850,16 +923,11 @@ while running:
         crocodile_width = 0
         crocodile_height = 0
         
-        if crocodile_frame_1_loaded and crocodile_frame_2_loaded:
-            # Scale crocodile to make it bigger with smooth scaling (same scale as water tiles)
-            CROCODILE_SCALE = WATER_TILE_SCALE  # Same scale as water tiles
-            base_crocodile = crocodile_frame_1 if crocodile_frame == 0 else crocodile_frame_2
-            original_width = base_crocodile.get_width()
-            original_height = base_crocodile.get_height()
-            crocodile_width = int(original_width * CROCODILE_SCALE)
-            crocodile_height = int(original_height * CROCODILE_SCALE)
-            # Use smoothscale for better quality
-            current_crocodile = pygame.transform.smoothscale(base_crocodile, (crocodile_width, crocodile_height))
+        if crocodile_frame_1_loaded and crocodile_frame_2_loaded and crocodile_frame_1 and crocodile_frame_2:
+            # Use pre-scaled and darkened crocodile frames
+            current_crocodile = crocodile_frame_1 if crocodile_frame == 0 else crocodile_frame_2
+            crocodile_width = current_crocodile.get_width()
+            crocodile_height = current_crocodile.get_height()
             # Center crocodile horizontally
             crocodile_x = SWAMP_START_X + (SWAMP_WIDTH - crocodile_width) // 2
             # Position crocodile a little higher than water tiles
@@ -912,7 +980,7 @@ while running:
                 screen.blit(current_tile, (tile_x, tile_y))
         
         # Draw crocodile on top (at top middle)
-        if crocodile_frame_1_loaded and crocodile_frame_2_loaded:
+        if crocodile_frame_1_loaded and crocodile_frame_2_loaded and crocodile_frame_1 and crocodile_frame_2 and crocodile_width > 0:
             screen.blit(current_crocodile, (crocodile_x, crocodile_y))
     else:
         # Fallback to solid color if tiles not loaded
@@ -951,36 +1019,78 @@ while running:
             character["velocity_y"] = 0
             on_ground = True
 
+        # Check platform collision
         char_rect = pygame.Rect(character["x"], character["y"], character["width"], character["height"])
+        character_center_x = character["x"] + character["width"] // 2
+        character_bottom = character["y"] + character["height"]
+        
+        on_platform = False
+        
         for platform in platforms:
             platform_rect = pygame.Rect(platform["x"], platform["y"], platform["width"], platform["height"])
-            if char_rect.colliderect(platform_rect) and character["velocity_y"] >= 0:
-                platform_character_feet_y = character["y"] + character["height"]
-                platform_visual_feet_y = platform_character_feet_y - sprite_padding_offset
-                platform_target_y = platform["y"] - character["height"] + sprite_padding_offset
+            platform_target_y = platform["y"] - character["height"] + sprite_padding_offset
+            
+            # Check if character is horizontally within platform bounds
+            is_horizontally_on_platform = (platform["x"] <= character_center_x <= platform["x"] + platform["width"])
+            
+            # Only check platform collision when falling (velocity_y >= 0), not when jumping up
+            if character["velocity_y"] >= 0:
+                # First check: if horizontally aligned with platform and falling
+                if is_horizontally_on_platform:
+                    character_feet_y = character["y"] + character["height"]
+                    character_visual_feet_y = character_feet_y - sprite_padding_offset
+                    
+                    # Check if character's feet are at or below platform top (falling through or on it)
+                    feet_at_platform_level = (character_feet_y >= platform["y"] - 10 and 
+                                             character_feet_y <= platform["y"] + platform["height"] + 5)
+                    
+                    # If character is horizontally on platform and feet are at platform level, snap to platform
+                    # This prevents falling through platforms
+                    if feet_at_platform_level:
+                        # Only apply if character is above or at platform level (not below it)
+                        if character["y"] <= platform_target_y + 20:
+                            character["y"] = platform_target_y
+                            character["velocity_y"] = 0
+                            on_ground = True
+                            on_platform = True
+                            break
+                
+                # Second check: direct collision when falling (handles edge cases where character is slightly outside horizontal bounds)
+                if char_rect.colliderect(platform_rect):
+                    platform_character_feet_y = character["y"] + character["height"]
+                    platform_visual_feet_y = platform_character_feet_y - sprite_padding_offset
 
-                if platform_visual_feet_y >= platform["y"] or platform_character_feet_y >= platform["y"] + sprite_padding_offset:
-                    if character["y"] + character["height"] <= platform["y"] + platform["height"]:
+                    # Only snap to platform if character is falling onto it from above
+                    if platform_visual_feet_y >= platform["y"] or platform_character_feet_y >= platform["y"] + sprite_padding_offset:
+                        # Make sure character is above the platform (not inside it from the side)
+                        if character["y"] + character["height"] <= platform["y"] + platform["height"]:
+                            character["y"] = platform_target_y
+                            character["velocity_y"] = 0
+                            on_ground = True
+                            on_platform = True
+                            break
+        
+        # After checking collisions, if character is on ground and moving horizontally,
+        # keep them on the platform they're standing on (prevents falling off when moving horizontally)
+        if on_ground and character["velocity_y"] == 0:
+            for platform in platforms:
+                # Check if character is horizontally within platform bounds
+                is_horizontally_on_platform = (platform["x"] <= character_center_x <= platform["x"] + platform["width"])
+                
+                if is_horizontally_on_platform:
+                    platform_target_y = platform["y"] - character["height"] + sprite_padding_offset
+                    character_feet_y = character["y"] + character["height"]
+                    # Check if character is very close to platform top (within 3 pixels)
+                    if abs(character_feet_y - (platform["y"] + sprite_padding_offset)) <= 3:
                         character["y"] = platform_target_y
-                        character["velocity_y"] = 0
-                        on_ground = True
+                        on_platform = True
                         break
 
         character["on_ground"] = on_ground
         if on_ground:
             character["has_double_jump"] = True
 
-        # Swamp death check
-        character_center_x = character["x"] + character["width"] // 2
-        character_bottom = character["y"] + character["height"]
-
-        on_platform = False
-        for platform in platforms:
-            if (platform["x"] <= character_center_x <= platform["x"] + platform["width"] and
-                platform["y"] <= character_bottom <= platform["y"] + platform["height"] + 5):
-                on_platform = True
-                break
-
+        # Swamp death check (using already calculated character_center_x, character_bottom, and on_platform)
         if (SWAMP_START_X <= character_center_x <= SWAMP_START_X + SWAMP_WIDTH and
             character_bottom >= GROUND_Y and not on_platform and not game_over):
 
