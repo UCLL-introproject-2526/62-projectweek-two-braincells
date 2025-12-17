@@ -15,7 +15,7 @@ clock = pygame.time.Clock()
 
 sound = SoundManager()
 sound.play_music()
-pygame.mixer.music.set_volume(0.25)
+pygame.mixer.music.set_volume(0.3)
 
 # Constants
 GROUND_Y = SCREEN_HEIGHT - 150
