@@ -7,7 +7,7 @@ import subprocess
 
 pygame.init()
 pygame.mixer.init()
-pygame.mixer.music.load("main_menu.mp3") 
+pygame.mixer.music.load("assets/sound/main_menu.mp3") 
 pygame.mixer.music.set_volume(1.0)
 pygame.mixer.music.play(-1)  # loop forever
 

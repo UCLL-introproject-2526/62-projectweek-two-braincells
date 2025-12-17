@@ -3,19 +3,19 @@ import sys
 import random
 import math
 import os
-from sounds import SoundManager 
+from sounds import SoundManager
 
 # Initialize Pygame
 pygame.init()
-screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+# screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN) # todo: revert back to this
+screen = pygame.display.set_mode((0, 0))
 SCREEN_WIDTH, SCREEN_HEIGHT = screen.get_size()
 pygame.display.set_caption("Fly Feast")
 clock = pygame.time.Clock()
 
-# ---------------- SOUND SETUP ----------------
 sound = SoundManager()
 sound.play_music()
-pygame.mixer.music.set_volume(0.4)  # 0.0 = silent, 1.0 = max volume
+pygame.mixer.music.set_volume(0.25)
 
 # Constants
 GROUND_Y = SCREEN_HEIGHT - 150
@@ -27,10 +27,13 @@ PLATFORM_WIDTH = SWAMP_WIDTH // 2
 PLATFORM_HEIGHT = 20
 PLATFORM_X = SWAMP_START_X + (SWAMP_WIDTH - PLATFORM_WIDTH) // 2
 PLATFORM_Y = GROUND_Y - 80
-NUM_BEES = 6
+NUM_FLIES = 6
 TIMER_START_SECONDS = 90
 SCORE_ANIMATION_DURATION = 200
 ANIMATION_SPEED = 150
+BASE_DIR = os.getcwd()
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+SPRITES_DIR = os.path.join(ASSETS_DIR, "sprites")
 
 # Colors
 BG_COLOR = (135, 206, 250)
@@ -46,37 +49,17 @@ def load_image(path, convert_alpha=False):
     except:
         return None, False
 
-bee_img, _ = load_image("fly.png", convert_alpha=True)
-background_img, background_loaded = load_image("view.png")
-
-# Load ground tiles
-ground_tiles = {}
-ground_tiles_loaded = False
-tile_size = None
-
-if os.path.exists("ground_tiles_25_pngs"):
-    for row in range(1, 6):
-        for col in range(1, 6):
-            path = os.path.join("ground_tiles_25_pngs", f"tile_r{row}_c{col}.png")
-            if os.path.exists(path):
-                try:
-                    tile = pygame.image.load(path).convert_alpha()
-                    ground_tiles[(row, col)] = tile
-                    if tile_size is None:
-                        tile_size = tile.get_width()  # Assume square tiles
-                except:
-                    pass
-    if ground_tiles:
-        ground_tiles_loaded = True
+fly_img, _ = load_image(f"{SPRITES_DIR}/fly/fly.png", convert_alpha=True)
+background_img, background_loaded = load_image(f"{ASSETS_DIR}/background.png")
 
 # Load tree images
 tree_images = None
 tree_loaded = False
 tree_width, tree_height = 150, 250
 try:
-    tree_left, _ = load_image("projectweek2/tree_img/tree_left_final_clean2.png", convert_alpha=True)
-    tree_middle, _ = load_image("projectweek2/tree_img/tree_middle_final_clean2.png", convert_alpha=True)
-    tree_right, _ = load_image("projectweek2/tree_img/tree_right_final_clean2.png", convert_alpha=True)
+    tree_left, _ = load_image(f"{SPRITES_DIR}/trees/tree_left_final_clean2.png", convert_alpha=True)
+    tree_middle, _ = load_image(f"{SPRITES_DIR}/trees/tree_middle_final_clean2.png", convert_alpha=True)
+    tree_right, _ = load_image(f"{SPRITES_DIR}/trees/tree_right_final_clean2.png", convert_alpha=True)
     if tree_left and tree_middle and tree_right:
         tree_left = pygame.transform.scale(tree_left, (tree_width, tree_height))
         tree_middle = pygame.transform.scale(tree_middle, (tree_width, tree_height))
@@ -89,20 +72,24 @@ except:
 # Load tongue sprites
 tongue_frames = []
 tongue_loaded = False
-TONGUE_DIR = "projectweek2/tongues_split_pngs"
+tongue_paths = [
+    "tongues_split_pngs",
+    f"{SPRITES_DIR}/frog/tongue" # place tongue pictures in /assets/sprites/frog/tongue
+]
 
-if os.path.exists(TONGUE_DIR):
-    for i in range(1, 9):  # tongue_01.png to tongue_08.png
-        path = os.path.join(TONGUE_DIR, f"tongue_{i:02d}.png")
-        if os.path.exists(path):
-            try:
-                frame = pygame.image.load(path).convert_alpha()
-                tongue_frames.append(frame)
-            except:
-                pass
-    if tongue_frames:
-        tongue_loaded = True
-
+for tongue_dir in tongue_paths:
+    if os.path.exists(tongue_dir):
+        for i in range(1, 9):  # tongue_01.png to tongue_08.png
+            path = f"{SPRITES_DIR}/frog/tongue/tongue_{i:02d}.png" # place tongue pictures in /assets/sprites/frog/tongue
+            if os.path.exists(path):
+                try:
+                    frame = pygame.image.load(path).convert_alpha()
+                    tongue_frames.append(frame)
+                except:
+                    pass
+        if tongue_frames:
+            tongue_loaded = True
+            break
 
 # Load frog sprites
 frog_frames = {
@@ -112,23 +99,20 @@ frog_frames = {
 }
 sprite_sheet_loaded = False
 
-FROG_DIR = "projectweek2/frogs_split" 
+for anim_type in ["standing", "walk", "jump"]:
+    frame_count = 4 if anim_type == "standing" else 3
+    for i in range(1, frame_count + 1):
+        for direction in ["left", "right"]:
+            key = f"{anim_type.replace('standing', 'idle')}_{direction}"
+            path = f"{SPRITES_DIR}/frog/{anim_type}_{direction}_f{i}.png"
+            if os.path.exists(path):
+                try:
+                    frame = pygame.image.load(path).convert_alpha()
+                    frog_frames[key].append(frame)
+                except:
+                    pass
 
-if os.path.exists(FROG_DIR):
-    for anim_type in ["standing", "walk", "jump"]:
-        frame_count = 4 if anim_type == "standing" else 3
-        for i in range(1, frame_count + 1):
-            for direction in ["left", "right"]:
-                key = f"{anim_type.replace('standing', 'idle')}_{direction}"
-                path = os.path.join(FROG_DIR, f"{anim_type}_{direction}_f{i}.png")
-                if os.path.exists(path):
-                    try:
-                        frame = pygame.image.load(path).convert_alpha()
-                        frog_frames[key].append(frame)
-                    except:
-                        pass
-    
-    sprite_sheet_loaded = any(len(frames) > 0 for frames in frog_frames.values())
+sprite_sheet_loaded = any(len(frames) > 0 for frames in frog_frames.values())
 
 # Animation state
 animation_frames = {key: 0 for key in frog_frames.keys()} if sprite_sheet_loaded else {}
@@ -140,27 +124,19 @@ pixel_font_images = {}
 pixel_font_loaded = False
 default_char_width, default_char_height = 20, 20
 
-# --- pixel font (PATH FIXED) ---
-PIXEL_FONT_DIR = "projectweek2/pixel_font"
+for char in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+    path = f"{ASSETS_DIR}/pixel_font/{char}.png"
 
-pixel_font_images = {}
-pixel_font_loaded = False
-default_char_width, default_char_height = 20, 20
+    if os.path.exists(path):
+        try:
+            pixel_font_images[char] = pygame.image.load(path).convert_alpha()
+        except:
+            pass
 
-if os.path.exists(PIXEL_FONT_DIR):
-    for char in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-        path = os.path.join(PIXEL_FONT_DIR, f"{char}.png")
-        if os.path.exists(path):
-            try:
-                pixel_font_images[char] = pygame.image.load(path).convert_alpha()
-            except:
-                pass
-
-    if pixel_font_images:
-        pixel_font_loaded = True
-        default_char_width = pixel_font_images['0'].get_width()
-        default_char_height = pixel_font_images['0'].get_height()
-
+if pixel_font_images:
+    pixel_font_loaded = True
+    default_char_width = pixel_font_images['0'].get_width()
+    default_char_height = pixel_font_images['0'].get_height()
 
 # Game state
 score = 0
@@ -168,16 +144,18 @@ high_score = 0
 score_animation_time = 0
 timer_start_time = None
 timer_remaining = TIMER_START_SECONDS
+
+# --- GAME OVER STATE ---
 game_over = False
-game_over_start_time = 0  # For screen shake timing
-shake_duration = 800      # milliseconds
-shake_magnitude = 25      # pixels
+game_over_start_time = 0
+shake_duration = 700      # ms
+shake_magnitude = 20
 
 
-# Create bees
-bees = []
-for _ in range(NUM_BEES):
-    bees.append({
+# Create flies
+flies = []
+for _ in range(NUM_FLIES):
+    flies.append({
         "x": random.randint(0, SCREEN_WIDTH),
         "y": random.randint(0, SCREEN_HEIGHT),
         "speed": random.randint(2, 4)
@@ -226,101 +204,10 @@ def reset_game():
     character["tongue_end_time"] = 0
     character["facing_direction"] = "right"
     
-    for bee in bees:
-        bee["x"] = random.randint(0, SCREEN_WIDTH)
-        bee["y"] = random.randint(0, SCREEN_HEIGHT)
-        bee["speed"] = random.randint(2, 4)
-
-def draw_tiled_ground(surface, x, y, width, height, use_grass_top=True):
-    """Draw tiled ground using the ground tileset
-    use_grass_top: If True, uses grass tiles (r1) on top row. If False, uses ground tiles (r3) on top row.
-    """
-    if not ground_tiles_loaded or tile_size is None:
-        # Fallback to solid color
-        pygame.draw.rect(surface, GROUND_COLOR, (x, y, width, height))
-        return
-    
-    # Calculate how many tiles fit - ensure we have enough to cover the area
-    tiles_x = max(1, int(math.ceil(width / tile_size)))
-    tiles_y = max(1, int(math.ceil(height / tile_size)))
-    
-    # Calculate actual tile size to evenly fill the area
-    actual_tile_width = width / tiles_x
-    actual_tile_height = height / tiles_y
-    
-    for tile_y in range(tiles_y):
-        for tile_x in range(tiles_x):
-            # Calculate exact position - tiles must touch each other exactly
-            # Use integer positions to avoid floating point gaps
-            tile_pos_x = int(x + tile_x * actual_tile_width)
-            tile_pos_y = int(y + tile_y * actual_tile_height)
-            
-            # Calculate draw size - ensure tiles fill exactly and touch
-            if tile_x == tiles_x - 1:
-                # Last tile in row - stretch to fill remaining width exactly
-                draw_width = int((x + width) - tile_pos_x)
-            else:
-                # Regular tile - calculate next tile position to ensure no gap
-                next_tile_x = int(x + (tile_x + 1) * actual_tile_width)
-                draw_width = next_tile_x - tile_pos_x
-            
-            if tile_y == tiles_y - 1:
-                # Last tile in column - stretch to fill remaining height exactly
-                draw_height = int((y + height) - tile_pos_y)
-            else:
-                # Regular tile - calculate next tile position to ensure no gap
-                next_tile_y = int(y + (tile_y + 1) * actual_tile_height)
-                draw_height = next_tile_y - tile_pos_y
-            
-            # Ensure minimum size to avoid gaps
-            draw_width = max(1, draw_width)
-            draw_height = max(1, draw_height)
-            
-            # Determine which tile to use based on position
-            if tile_y == 0:  # Top row
-                if use_grass_top:
-                    # Use grass tiles (r1) for surface level
-                    if tile_x == 0:
-                        tile_key = (1, 1)  # Top-left corner (grass)
-                    elif tile_x == tiles_x - 1:
-                        tile_key = (1, 5)  # Top-right corner (grass)
-                    else:
-                        tile_key = (1, min(2 + (tile_x % 3), 4))  # Top edge (grass)
-                else:
-                    # Use ground tiles (r3) for below surface
-                    if tile_x == 0:
-                        tile_key = (3, 1)  # Top-left corner (ground)
-                    elif tile_x == tiles_x - 1:
-                        tile_key = (3, 5)  # Top-right corner (ground)
-                    else:
-                        tile_key = (3, min(2 + (tile_x % 3), 4))  # Top edge (ground)
-            elif tile_y == tiles_y - 1:  # Bottom row - use ground tiles
-                if tile_x == 0:
-                    tile_key = (5, 1)  # Bottom-left corner
-                elif tile_x == tiles_x - 1:
-                    tile_key = (5, 5)  # Bottom-right corner
-                else:
-                    # Bottom edge
-                    tile_key = (5, min(2 + (tile_x % 3), 4))
-            else:  # Middle rows - use ground tiles
-                if tile_x == 0:
-                    # Left edge - use r3 or r4
-                    tile_key = (3, 1)
-                elif tile_x == tiles_x - 1:
-                    # Right edge - use r3 or r4
-                    tile_key = (3, 5)
-                else:
-                    # Center/inner tiles - use specified tiles: r2_c3, r4_c2, r4_c3, r5_c5
-                    inner_tiles = [(2, 3), (4, 2), (4, 3), (5, 5)]
-                    tile_index = (tile_y * tiles_x + tile_x) % len(inner_tiles)
-                    tile_key = inner_tiles[tile_index]
-            
-            # Draw the tile if it exists, scaled to fit the area
-            if tile_key in ground_tiles:
-                tile_img = ground_tiles[tile_key]
-                # Scale tile to exact size needed to fill the space
-                scaled_tile = pygame.transform.scale(tile_img, (int(draw_width), int(draw_height)))
-                surface.blit(scaled_tile, (int(tile_pos_x), int(tile_pos_y)))
+    for fly in flies:
+        fly["x"] = random.randint(0, SCREEN_WIDTH)
+        fly["y"] = random.randint(0, SCREEN_HEIGHT)
+        fly["speed"] = random.randint(2, 4)
 
 def draw_pixel_text(surface, text, x, y, scale=1.0, color=None):
     current_x = x
@@ -354,86 +241,67 @@ while running:
     # Update timer
     elapsed_seconds = (current_time - timer_start_time) // 1000
     timer_remaining = max(0, TIMER_START_SECONDS - elapsed_seconds)
-    if timer_remaining <= 0 and not game_over:
+    if timer_remaining <= 0:
         reset_game()
     
+
     keys = pygame.key.get_pressed()
-    
+
     # Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
             running = False
+
         elif game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_x, mouse_y = pygame.mouse.get_pos()
-            # Restart button coordinates
-            button_width, button_height = 300, 100
-            button_x = (SCREEN_WIDTH - button_width) // 2
-            button_y = (SCREEN_HEIGHT - button_height) // 2
-            if button_x <= mouse_x <= button_x + button_width and button_y <= mouse_y <= button_y + button_height:
+
+            if restart_rect.collidepoint(mouse_x, mouse_y):
                 reset_game()
                 game_over = False
-        elif not game_over:
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                sound.play("hit") 
-                if not character["tongue_extended"]:
-                    mouse_x, mouse_y = pygame.mouse.get_pos()
-                    frog_center_x = character["x"] + character["width"] // 2
-                    frog_center_y = character["y"] + character["height"] // 2
-                    character["tongue_angle"] = math.atan2(mouse_y - frog_center_y, mouse_x - frog_center_x)
-                    character["tongue_extended"] = True
-                    character["tongue_length"] = 0
-                    character["tongue_end_time"] = current_time + 300
-            elif event.type == pygame.KEYDOWN and (event.key == pygame.K_SPACE or event.key == pygame.K_UP or event.key == pygame.K_w):
-                sound.play("jump")
-                if character["on_ground"]:
-                    character["velocity_y"] = character["jump_speed"]
-                    character["on_ground"] = False
-                elif not character["on_ground"] and character["has_double_jump"] and current_time >= character["double_jump_cooldown_end"]:
-                    character["velocity_y"] = character["jump_speed"]
-                    character["has_double_jump"] = False
-                    character["double_jump_cooldown_end"] = current_time + 2000
 
-    # Walking sound - change sound or remove
-    keys = pygame.key.get_pressed()
-    moving = keys[pygame.K_LEFT] or keys[pygame.K_RIGHT] or keys[pygame.K_a] or keys[pygame.K_d]
-
-    if moving and not sound.walking:
-        sound.play_loop("walk")
-        sound.walking = True
-
-    elif not moving and sound.walking:
-        sound.stop("walk")
-        sound.walking = False
-
-    # Screen shake
-    shake_offset_x, shake_offset_y = 0, 0
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            sound.play("hit") 
+            if not character["tongue_extended"]:
+                mouse_x, mouse_y = pygame.mouse.get_pos()
+                frog_center_x = character["x"] + character["width"] // 2
+                frog_center_y = character["y"] + character["height"] // 2
+                character["tongue_angle"] = math.atan2(mouse_y - frog_center_y, mouse_x - frog_center_x)
+                character["tongue_extended"] = True
+                character["tongue_length"] = 0
+                character["tongue_end_time"] = current_time + 300
+        elif event.type == pygame.KEYDOWN and (event.key == pygame.K_SPACE or event.key == pygame.K_UP or event.key == pygame.K_w):
+            sound.play("jump")
+            if character["on_ground"]:
+                character["velocity_y"] = character["jump_speed"]
+                character["on_ground"] = False
+            elif not character["on_ground"] and character["has_double_jump"] and current_time >= character["double_jump_cooldown_end"]:
+                character["velocity_y"] = character["jump_speed"]
+                character["has_double_jump"] = False
+                character["double_jump_cooldown_end"] = current_time + 2000
+    
+    shake_x, shake_y = 0, 0
     if game_over:
-        elapsed_shake = current_time - game_over_start_time
-        if elapsed_shake < shake_duration:
-            shake_offset_x = random.randint(-shake_magnitude, shake_magnitude)
-            shake_offset_y = random.randint(-shake_magnitude, shake_magnitude)
+        elapsed = pygame.time.get_ticks() - game_over_start_time
+        if elapsed < shake_duration:
+            shake_x = random.randint(-shake_magnitude, shake_magnitude)
+            shake_y = random.randint(-shake_magnitude, shake_magnitude)
 
     # Draw background
     if background_loaded:
         if background_img.get_size() != (SCREEN_WIDTH, SCREEN_HEIGHT):
-            screen.blit(pygame.transform.scale(background_img, (SCREEN_WIDTH, SCREEN_HEIGHT)), (shake_offset_x, shake_offset_y))
+            screen.blit(pygame.transform.scale(background_img, (SCREEN_WIDTH, SCREEN_HEIGHT)), (shake_x, shake_y))
         else:
-            screen.blit(background_img, (shake_offset_x, shake_offset_y))
+            screen.blit(background_img, (0, 0))
     else:
         screen.fill(BG_COLOR)
     
-    # Draw ground and swamp with tiles
-    draw_tiled_ground(screen, 0 + shake_offset_x, GROUND_Y + shake_offset_y, SCREEN_WIDTH, GROUND_HEIGHT, use_grass_top=True)
-    draw_tiled_ground(screen, 0 + shake_offset_x, GROUND_Y + GROUND_HEIGHT + shake_offset_y, SWAMP_START_X, SWAMP_HEIGHT - GROUND_HEIGHT, use_grass_top=False)
-    right_ground_width = SCREEN_WIDTH - (SWAMP_START_X + SWAMP_WIDTH)
-    draw_tiled_ground(screen, SWAMP_START_X + SWAMP_WIDTH, GROUND_Y + GROUND_HEIGHT, 
-                     right_ground_width, SWAMP_HEIGHT - GROUND_HEIGHT, use_grass_top=False)
-    
-    # Swamp (keep as solid color)
+    # Draw ground and swamp
+    pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y, SCREEN_WIDTH, GROUND_HEIGHT))
+    pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y + GROUND_HEIGHT, SWAMP_START_X, SWAMP_HEIGHT - GROUND_HEIGHT))
+    pygame.draw.rect(screen, GROUND_COLOR, (SWAMP_START_X + SWAMP_WIDTH, GROUND_Y + GROUND_HEIGHT, 
+                                           SCREEN_WIDTH - (SWAMP_START_X + SWAMP_WIDTH), SWAMP_HEIGHT - GROUND_HEIGHT))
     pygame.draw.rect(screen, SWAMP_COLOR, (SWAMP_START_X, GROUND_Y, SWAMP_WIDTH, SWAMP_HEIGHT))
-    
-    # Platform over swamp (with grass on top)
-    draw_tiled_ground(screen, PLATFORM_X, PLATFORM_Y, PLATFORM_WIDTH, PLATFORM_HEIGHT, use_grass_top=True)
+    pygame.draw.rect(screen, PLATFORM_COLOR, (PLATFORM_X, PLATFORM_Y, PLATFORM_WIDTH, PLATFORM_HEIGHT))
     
     # Draw trees
     if tree_loaded and tree_images:
@@ -490,13 +358,14 @@ while running:
     character_center_x = character["x"] + character["width"] // 2
     character_bottom = character["y"] + character["height"]
     on_platform = (PLATFORM_X <= character_center_x <= PLATFORM_X + PLATFORM_WIDTH and 
-               PLATFORM_Y <= character_bottom <= PLATFORM_Y + PLATFORM_HEIGHT + 5)
-
+                   PLATFORM_Y <= character_bottom <= PLATFORM_Y + PLATFORM_HEIGHT + 5)
+    
     if (SWAMP_START_X <= character_center_x <= SWAMP_START_X + SWAMP_WIDTH and 
         character_bottom >= GROUND_Y and not on_platform and not game_over):
+
         sound.play("gameover")
         game_over = True
-        game_over_start_time = pygame.time.get_ticks()  # Start screen shake
+        game_over_start_time = pygame.time.get_ticks()
 
     
     # Update tongue
@@ -515,28 +384,28 @@ while running:
         tongue_end_x = frog_center_x + math.cos(character["tongue_angle"]) * character["tongue_length"]
         tongue_end_y = frog_center_y + math.sin(character["tongue_angle"]) * character["tongue_length"]
         
-        # Bee collision
-        bees_to_remove = []
-        for i, bee in enumerate(bees):
-            bee_center_x = bee["x"] + 20
-            bee_center_y = bee["y"] + 20
-            to_bee_x = bee_center_x - frog_center_x
-            to_bee_y = bee_center_y - frog_center_y
-            dot_product = to_bee_x * math.cos(character["tongue_angle"]) + to_bee_y * math.sin(character["tongue_angle"])
+        # Fly collision
+        flies_to_remove = []
+        for i, fly in enumerate(flies):
+            fly_center_x = fly["x"] + 20
+            fly_center_y = fly["y"] + 20
+            to_fly_x = fly_center_x - frog_center_x
+            to_fly_y = fly_center_y - frog_center_y
+            dot_product = to_fly_x * math.cos(character["tongue_angle"]) + to_fly_y * math.sin(character["tongue_angle"])
             
             if 0 <= dot_product <= character["tongue_length"]:
-                perp_distance = abs(-to_bee_x * math.sin(character["tongue_angle"]) + to_bee_y * math.cos(character["tongue_angle"]))
+                perp_distance = abs(-to_fly_x * math.sin(character["tongue_angle"]) + to_fly_y * math.cos(character["tongue_angle"]))
                 if perp_distance < 30:
                     sound.play("eaten")
-                    bees_to_remove.append(i)
+                    flies_to_remove.append(i)
         
-        for i in reversed(bees_to_remove):
-            bees.pop(i)
+        for i in reversed(flies_to_remove):
+            flies.pop(i)
             score += 1
             if score > high_score:
                 high_score = score
             score_animation_time = current_time
-            bees.append({
+            flies.append({
                 "x": random.randint(0, SCREEN_WIDTH),
                 "y": random.randint(0, SCREEN_HEIGHT),
                 "speed": random.randint(2, 4)
@@ -634,17 +503,17 @@ while running:
         pygame.draw.line(screen, (200, 0, 0), (frog_center_x, frog_center_y), (tongue_end_x, tongue_end_y), 8)
         pygame.draw.circle(screen, (150, 0, 0), (int(tongue_end_x), int(tongue_end_y)), 6)
     
-    # Draw bees
-    for bee in bees:
-        bee["x"] += bee["speed"]
-        bee["y"] += random.choice([-1, 0, 1])
-        if bee["x"] > SCREEN_WIDTH:
-            bee["x"] = -40
-            bee["y"] = random.randint(0, SCREEN_HEIGHT)
-        if bee_img:
-            screen.blit(bee_img, (bee["x"], bee["y"]))
+    # Draw flies
+    for fly in flies:
+        fly["x"] += fly["speed"]
+        fly["y"] += random.choice([-1, 0, 1])
+        if fly["x"] > SCREEN_WIDTH:
+            fly["x"] = -40
+            fly["y"] = random.randint(0, SCREEN_HEIGHT)
+        if fly_img:
+            screen.blit(fly_img, (fly["x"], fly["y"]))
         else:
-            pygame.draw.rect(screen, (255, 255, 0), (bee["x"], bee["y"], 40, 40))
+            pygame.draw.rect(screen, (255, 255, 0), (fly["x"], fly["y"], 40, 40))
     
     # Draw UI
     if pixel_font_loaded:
@@ -681,38 +550,40 @@ while running:
         score_x = SCREEN_WIDTH - text_width - 20
         draw_pixel_text(screen, score_text, score_x, 20, scale=scale)
     
-
-        # ---------------- GAME OVER SCREEN ----------------
     if game_over:
-        # Dark overlay
+    # Dark overlay
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         overlay.set_alpha(180)
         overlay.fill((0, 0, 0))
         screen.blit(overlay, (0, 0))
 
-        # GAME OVER text
+    # GAME OVER text
         if pixel_font_loaded:
             text = "GAME OVER"
             scale = 1.2
             text_width = len(text) * int(default_char_width * scale)
             text_x = (SCREEN_WIDTH - text_width) // 2
-            draw_pixel_text(screen, text, text_x, SCREEN_HEIGHT // 2 - 140, scale=scale, color=(255, 50, 50))
+            draw_pixel_text(
+                screen,
+                text,
+                text_x,
+                SCREEN_HEIGHT // 2 - 140,
+                scale=scale,
+                color=(255, 50, 50)
+            )
 
-        # RESTART text (clickable, no rectangle)
-        if pixel_font_loaded:
-            text = "RESTART"
-            scale = 0.6
+            # RESTART text (clickable)
+            restart_text = "RESTART"
+            restart_scale = 0.6
 
-            text_width = len(text) * int(default_char_width * scale)
-            text_height = int(default_char_height * scale)
+            text_width = len(restart_text) * int(default_char_width * restart_scale)
+            text_height = int(default_char_height * restart_scale)
 
-    # Position (left + down like you want)
             text_x = (SCREEN_WIDTH - text_width) // 2
             text_y = (SCREEN_HEIGHT // 2) + 10
 
             mouse_x, mouse_y = pygame.mouse.get_pos()
 
-    # Hover detection using text bounds
             hover = (
                 text_x <= mouse_x <= text_x + text_width and
                 text_y <= mouse_y <= text_y + text_height
@@ -720,15 +591,18 @@ while running:
 
             color = (255, 255, 255) if hover else (200, 200, 200)
 
-            draw_pixel_text(screen, text, text_x, text_y, scale=scale, color=color)
+            draw_pixel_text(
+                screen,
+                restart_text,
+                text_x,
+                text_y,
+                scale=restart_scale,
+                color=color
+            )
 
-    # Save rect for clicking (IMPORTANT)
             restart_rect = pygame.Rect(text_x, text_y, text_width, text_height)
-
-
 
     pygame.display.flip()
 
-sound.stop_music()
 pygame.quit()
 sys.exit()
