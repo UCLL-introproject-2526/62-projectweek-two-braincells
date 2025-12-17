@@ -3,6 +3,7 @@ import sys
 import random
 import math
 import os
+import subprocess
 from sounds import SoundManager
 
 # Initialize Pygame
@@ -235,6 +236,14 @@ pause_menu_target_y = None
 pause_menu_slide_speed = 15
 pause_menu_visible = False
 
+# --- GAME END STATE (timer ended) ---
+game_end = False
+game_end_start_time = 0
+game_end_menu_y = -500
+game_end_menu_target_y = None
+game_end_menu_slide_speed = 15
+game_end_menu_visible = False
+
 # Helper: spawn a fly anywhere + random movement pattern
 def make_fly():
     ang = random.uniform(0, math.tau)         # random direction
@@ -285,11 +294,15 @@ character = {
 }
 
 def reset_game():
-    global score, score_animation_time, timer_start_time, timer_remaining, flies
+    global score, score_animation_time, timer_start_time, timer_remaining, flies, game_end
     score = 0
     score_animation_time = 0
     timer_start_time = pygame.time.get_ticks()
     timer_remaining = TIMER_START_SECONDS
+    game_end = False
+    game_end_menu_y = -500
+    game_end_menu_visible = False
+    game_end_menu_target_y = None
 
     character["x"] = SCREEN_WIDTH // 2
     character["y"] = GROUND_Y - 30 + sprite_padding_offset
@@ -431,6 +444,85 @@ def draw_pause_menu(surface, menu_y):
 
     return None, None, None, None
 
+def draw_game_end_menu(surface, menu_y):
+    """Draw the game end menu with wooden sign"""
+    if not wooden_sign_loaded or not wooden_sign_img:
+        return None, None, None
+
+    sign_width = wooden_sign_img.get_width()
+    sign_height = wooden_sign_img.get_height()
+
+    scale_factor = min(SCREEN_WIDTH * 0.6 / sign_width, SCREEN_HEIGHT * 0.6 / sign_height)
+    scaled_width = int(sign_width * scale_factor)
+    scaled_height = int(sign_height * scale_factor)
+    scaled_sign = pygame.transform.scale(wooden_sign_img, (scaled_width, scaled_height))
+
+    sign_x = (SCREEN_WIDTH - scaled_width) // 2
+    sign_y = menu_y
+
+    surface.blit(scaled_sign, (sign_x, sign_y))
+
+    text_start_y = sign_y + int(scaled_height * 0.15)
+    text_spacing = int(scaled_height * 0.12)
+
+    if pixel_font_loaded:
+        # Draw "GAME END" title
+        game_end_text = "GAME END"
+        game_end_scale = 0.45
+        game_end_width = len(game_end_text) * int(default_char_width * game_end_scale) + (len(game_end_text) - 1) * 2
+        game_end_x = sign_x + (scaled_width - game_end_width) // 2
+        draw_pixel_text(surface, game_end_text, game_end_x, text_start_y, scale=game_end_scale, color=(255, 255, 255))
+
+        # Draw score
+        score_text = f"SCORE: {score}"
+        score_scale = 0.3
+        score_width = len(score_text) * int(default_char_width * score_scale) + (len(score_text) - 1) * 2
+        score_x = sign_x + (scaled_width - score_width) // 2
+        draw_pixel_text(surface, score_text, score_x, text_start_y + text_spacing * 1.5, scale=score_scale, color=(255, 255, 255))
+
+        # Draw high score
+        high_score_text = f"HIGH SCORE: {high_score}"
+        high_score_scale = 0.28
+        high_score_width = len(high_score_text) * int(default_char_width * high_score_scale) + (len(high_score_text) - 1) * 2
+        if high_score_width > scaled_width * 0.9:
+            high_score_scale = (scaled_width * 0.9) / (len(high_score_text) * default_char_width + (len(high_score_text) - 1) * 2)
+            high_score_width = len(high_score_text) * int(default_char_width * high_score_scale) + (len(high_score_text) - 1) * 2
+
+        high_score_x = sign_x + (scaled_width - high_score_width) // 2
+        draw_pixel_text(surface, high_score_text, high_score_x, text_start_y + text_spacing * 2.5, scale=high_score_scale, color=(255, 255, 255))
+
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+
+        # Draw "RESTART" option
+        restart_text = "RESTART"
+        restart_scale = 0.35
+        restart_width = len(restart_text) * int(default_char_width * restart_scale) + (len(restart_text) - 1) * 2
+        restart_x = sign_x + (scaled_width - restart_width) // 2
+        restart_y = text_start_y + text_spacing * 3.8
+
+        restart_hover = (restart_x <= mouse_x <= restart_x + restart_width and
+                        restart_y <= mouse_y <= restart_y + int(default_char_height * restart_scale))
+        restart_color = (200, 255, 200) if restart_hover else (255, 255, 255)
+        draw_pixel_text(surface, restart_text, restart_x, restart_y, scale=restart_scale, color=restart_color)
+        restart_rect = pygame.Rect(restart_x, restart_y, restart_width, int(default_char_height * restart_scale))
+
+        # Draw "MAIN MENU" option
+        main_menu_text = "MAIN MENU"
+        main_menu_scale = 0.35
+        main_menu_width = len(main_menu_text) * int(default_char_width * main_menu_scale) + (len(main_menu_text) - 1) * 2
+        main_menu_x = sign_x + (scaled_width - main_menu_width) // 2
+        main_menu_y = text_start_y + text_spacing * 4.8
+
+        main_menu_hover = (main_menu_x <= mouse_x <= main_menu_x + main_menu_width and
+                          main_menu_y <= mouse_y <= main_menu_y + int(default_char_height * main_menu_scale))
+        main_menu_color = (200, 255, 200) if main_menu_hover else (255, 255, 255)
+        draw_pixel_text(surface, main_menu_text, main_menu_x, main_menu_y, scale=main_menu_scale, color=main_menu_color)
+        main_menu_rect = pygame.Rect(main_menu_x, main_menu_y, main_menu_width, int(default_char_height * main_menu_scale))
+
+        return restart_rect, main_menu_rect, (sign_x, sign_y, scaled_width, scaled_height)
+
+    return None, None, None
+
 def refresh_keybinds(self):
     self._cached_keybinds = self.get_keybinds()
 
@@ -464,13 +556,30 @@ while running:
                 pause_menu_visible = False
                 pause_menu_target_y = None
 
-    # Skip game updates when paused
-    if not paused:
+    # Handle game end menu animation
+    if game_end:
+        if game_end_menu_target_y is None and wooden_sign_loaded and wooden_sign_img:
+            game_end_menu_target_y = 0
+
+        if game_end_menu_target_y is not None:
+            if game_end_menu_y < game_end_menu_target_y:
+                game_end_menu_y += game_end_menu_slide_speed
+                if game_end_menu_y >= game_end_menu_target_y:
+                    game_end_menu_y = game_end_menu_target_y
+                    game_end_menu_visible = True
+            else:
+                game_end_menu_visible = True
+
+    # Skip game updates when paused or game ended
+    if not paused and not game_end:
         # Update timer
         elapsed_seconds = (current_time - timer_start_time) // 1000
         timer_remaining = max(0, TIMER_START_SECONDS - elapsed_seconds)
-        if timer_remaining <= 0:
-            reset_game()
+        if timer_remaining <= 0 and not game_end:
+            game_end = True
+            game_end_start_time = current_time
+            game_end_menu_y = -500
+            game_end_menu_visible = False
 
     keys = pygame.key.get_pressed()
 
@@ -504,13 +613,30 @@ while running:
             elif exit_rect and exit_rect.collidepoint(mouse_x, mouse_y):
                 running = False
 
+        elif game_end and game_end_menu_visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            restart_rect, main_menu_rect, _ = draw_game_end_menu(screen, game_end_menu_y)
+
+            if restart_rect and restart_rect.collidepoint(mouse_x, mouse_y):
+                reset_game()
+                game_end = False
+                game_end_menu_y = -500
+                game_end_menu_visible = False
+                game_end_menu_target_y = None
+            elif main_menu_rect and main_menu_rect.collidepoint(mouse_x, mouse_y):
+                # Launch frontpage and exit game
+                BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+                FRONTPAGE_PATH = os.path.join(BASE_DIR, "frontpage.py")
+                subprocess.Popen([sys.executable, FRONTPAGE_PATH])
+                running = False
+
         elif game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_x, mouse_y = pygame.mouse.get_pos()
             if restart_rect.collidepoint(mouse_x, mouse_y):
                 reset_game()
                 game_over = False
 
-        elif not paused and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        elif not paused and not game_end and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             sound.play("hit")
             if not character["tongue_extended"]:
                 mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -530,7 +656,7 @@ while running:
             elif not character["on_ground"] and character["has_double_jump"] and current_time >= character["double_jump_cooldown_end"]:
                 character["velocity_y"] = character["jump_speed"]
                 character["has_double_jump"] = False
-                character["double_jump_cooldown_end"] = current_time + 2000
+                character["double_jump_cooldown_end"] = current_time + 500
 
     shake_x, shake_y = 0, 0
     if game_over:
@@ -628,8 +754,8 @@ while running:
             if tree_x < SWAMP_START_X:
                 screen.blit(tree_img, (tree_x, tree_y_pos))
 
-    # Character movement (only when not paused)
-    if not paused:
+    # Character movement (only when not paused and not game ended)
+    if not paused and not game_end:
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             character["x"] -= character["speed"]
             character["facing_direction"] = "left"
@@ -830,7 +956,7 @@ while running:
 
     # Update and draw flies (random movement pattern)
     for fly in flies:
-        if not paused:
+        if not paused and not game_end:
             # Ensure old flies still work (if any exist without vx/vy)
             if "vx" not in fly or "vy" not in fly:
                 ang = random.uniform(0, math.tau)
@@ -912,6 +1038,14 @@ while running:
         overlay.fill((0, 0, 0))
         screen.blit(overlay, (0, 0))
         draw_pause_menu(screen, pause_menu_y)
+
+    # Draw game end menu (timer ended)
+    if game_end:
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+        draw_game_end_menu(screen, game_end_menu_y)
 
     if game_over:
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
