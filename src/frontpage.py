@@ -7,7 +7,7 @@ import subprocess
 import math
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-GAME_PATH = os.path.join(BASE_DIR, "app.py")
+GAME_PATH = os.path.join(BASE_DIR, "app_new.py")
 
 pygame.init()
 pygame.mixer.init()
