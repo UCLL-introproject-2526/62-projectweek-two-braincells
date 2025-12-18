@@ -16,6 +16,8 @@ class SoundManager:
             "eaten": pygame.mixer.Sound(os.path.join(SOUND_DIR, "successfully_eating.mp3")),
             "walk": pygame.mixer.Sound(os.path.join(SOUND_DIR, "walk.mp3")),
             "gameover": pygame.mixer.Sound(os.path.join(SOUND_DIR, "game_over.mp3")),
+            "flashsound": pygame.mixer.Sound(os.path.join(SOUND_DIR, "FAHH.mp3")),
+            "ring": pygame.mixer.Sound(os.path.join(SOUND_DIR, "ringtone.mp3")),
         }
 
     def play(self, name, volume=None):
