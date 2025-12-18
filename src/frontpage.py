@@ -227,6 +227,7 @@ class Slider:
 class App:
     def __init__(self):
         self.settings = self.load_json(SETTINGS_PATH, DEFAULT_SETTINGS)
+        self.ensure_settings_defaults()
         self.players = self.load_json(PLAYERS_PATH, {}) 
         self.username = None
         self.apply_audio_settings()
@@ -244,6 +245,15 @@ class App:
     def save_json(self, path, data):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+    
+    def ensure_settings_defaults(self):
+    # Ensure sound section
+        self.settings.setdefault("sound", {})
+        self.settings["sound"].setdefault("music", 0.5)
+        self.settings["sound"].setdefault("sfx", 0.7)
+        self.settings["sound"].setdefault("muted", False)
+        # Ensure keybinds section
+        self.settings.setdefault("keybinds", DEFAULT_SETTINGS["keybinds"].copy())
 
     def apply_audio_settings(self):
         s = self.settings["sound"]
