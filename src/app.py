@@ -11,7 +11,7 @@ from sounds import SoundManager
 pygame.init()
 screen = pygame.display.set_mode((0, 0))
 SCREEN_WIDTH, SCREEN_HEIGHT = screen.get_size()
-pygame.display.set_caption("Fly Feast")
+pygame.display.set_caption("FLIES")
 clock = pygame.time.Clock()
 
 # Get the directory where this script is located, then go up one level to project root

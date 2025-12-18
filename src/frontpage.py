@@ -19,7 +19,7 @@ pygame.mixer.music.play(-1)  # loop forever
 
 W, H = 1000, 650
 screen = pygame.display.set_mode((W, H))
-pygame.display.set_caption("Fly Feast")
+pygame.display.set_caption("FLIES")
 clock = pygame.time.Clock()
 
 FONT_BIG = pygame.font.Font(None, 64)
@@ -97,6 +97,13 @@ LEADERBOARD_BG = safe_load_image(
     size=(W - 120, 250),
     stretch=True
 )
+
+LOGO_IMG = safe_load_image(
+    os.path.join(ASSETS_DIR, "ui", "logo.png"),
+    size=(400, 120),   # adjust if needed
+    stretch=False
+)
+
 
 #-------------- HELPERS -----------
 def clamp(v, a, b):
@@ -317,7 +324,12 @@ class UsernameScene:
     def update(self,dt): pass
     def draw(self,surf):
         draw_bg_or_color(surf, FRONTPAGE_BG, (16,16,20))
-        draw_text(surf,"Fly Feast",FONT_BIG,W//2-150,100)
+        if LOGO_IMG:
+            logo_rect = LOGO_IMG.get_rect(center=(W // 2, 120))
+            surf.blit(LOGO_IMG, logo_rect.topleft)
+        else:
+            draw_text(surf,"Fly Feast",FONT_BIG,W//2-150,100)
+
         self.name_entry.draw(surf)
 
 class HomeScene:
@@ -363,12 +375,14 @@ class HomeScene:
     def draw(self, surf):
         draw_bg_or_color(surf, FRONTPAGE_BG, (16, 16, 20))
         
-        # Draw title
-        title = "Fly Feast"
-        shadow = FONT_BIG.render(title, True, (0, 0, 0))
-        text = FONT_BIG.render(title, True, (255, 255, 255))
-        surf.blit(shadow, (W//2 - text.get_width()//2 + 3, 73))
-        surf.blit(text, (W//2 - text.get_width()//2, 70))
+        # Draw logo instead of text title
+        if LOGO_IMG:
+            logo_rect = LOGO_IMG.get_rect(center=(W // 2, 105))
+            surf.blit(LOGO_IMG, logo_rect.topleft)
+        else:
+            # Fallback text if image missing
+            draw_text(surf, "FLIES", FONT_BIG, W//2 - 150, 100)
+
 
         # Draw username background image (brown block)
         if PLAYERNAME_BG_IMG:
