@@ -3,5 +3,12 @@
     "music": 0.505338078291815,
     "sfx": 0.5124555160142349,
     "muted": false
+  },
+  "keybinds": {
+    "left": "K_q",
+    "right": "K_d",
+    "jump": "K_SPACE",
+    "tongue": "K_LCTRL",
+    "pause": "K_ESCAPE"
   }
 }
