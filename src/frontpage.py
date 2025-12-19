@@ -2,15 +2,16 @@ import os
 import sys
 import json
 import random
-import pygame
+import pygame 
 import subprocess
+import math
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Project root
-GAME_PATH = os.path.join(BASE_DIR, "src", "app.py")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+GAME_PATH = os.path.join(BASE_DIR, "app.py")
 
 pygame.init()
 pygame.mixer.init()
-pygame.mixer.music.load(os.path.join(BASE_DIR, "assets", "sound", "main_menu.mp3")) 
+pygame.mixer.music.load("assets/sound/main_menu.mp3") 
 pygame.mixer.music.set_volume(1.0)
 pygame.mixer.music.play(-1)  # loop forever
 
@@ -18,15 +19,22 @@ pygame.mixer.music.play(-1)  # loop forever
 
 W, H = 1000, 650
 screen = pygame.display.set_mode((W, H))
-pygame.display.set_caption("Fly Feast")
+pygame.display.set_caption("FLIES")
 clock = pygame.time.Clock()
 
-FONT_BIG = pygame.font.Font(None, 72)
+FONT_BIG = pygame.font.Font(None, 64)
 FONT = pygame.font.Font(None, 40)
 FONT_SMALL = pygame.font.Font(None, 28)
 
-PLAYERS_PATH = os.path.join(BASE_DIR, "players.json")
-SETTINGS_PATH = os.path.join(BASE_DIR, "settings.json")
+FONT_UI = pygame.font.Font(None, 32)       # Labels & buttons
+FONT_UI_SMALL = pygame.font.Font(None, 22) # Helper text
+
+FONT_LB = pygame.font.Font(None, 22)   # Leaderboard rows
+FONT_LB_HEADER = pygame.font.Font(None, 24)
+
+
+PLAYERS_PATH = "players.json"
+SETTINGS_PATH = "settings.json"
 
 DEFAULT_SETTINGS = {
     "keybinds": {  
@@ -44,21 +52,58 @@ DEFAULT_SETTINGS = {
 }
 
 #-------------- ASSETS (IMAGES) -----------
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+ASSETS_DIR = os.path.join(BASE_DIR, "..", "assets")
 
-def safe_load_image(path, size=None, alpha=True):
+def safe_load_image(path, size=None, alpha=True, stretch=False):
+    """
+    Load an image safely.
+
+    - max_size: tuple (width, height) to limit the size
+    - stretch: if True, scale exactly to max_size (for backgrounds)
+               if False, preserve aspect ratio (for icons/buttons)
+    """
     if not os.path.exists(path):
         return None
+
     img = pygame.image.load(path)
     img = img.convert_alpha() if alpha else img.convert()
+    
     if size is not None:
-        img = pygame.transform.smoothscale(img, size)
+        if stretch:
+            img = pygame.transform.smoothscale(img, size)
+        else:
+            w, h = img.get_size()
+            max_w, max_h = size
+            scale = min(max_w / w, max_h / h)
+            new_size = (int(w * scale), int(h * scale))
+            img = pygame.transform.smoothscale(img, new_size)
+
     return img
+
 
 BG_VIEW = safe_load_image(os.path.join(ASSETS_DIR, "background.png"), (W,H), alpha=False)
 ICON_PLAY = safe_load_image(os.path.join(ASSETS_DIR, "ui", "play.png"), (90,90))
 ICON_SETTINGS = safe_load_image(os.path.join(ASSETS_DIR, "ui", "settings.png"), (90,90))
 FLY_IMG = safe_load_image(os.path.join(ASSETS_DIR, "sprites", "fly", "fly.png"), (40,40))
+FRONTPAGE_BG = safe_load_image(os.path.join(ASSETS_DIR, "sprites", "frontpagebackground.png"), (W, H), alpha=False)
+USERNAME_BG_IMG = safe_load_image(os.path.join(ASSETS_DIR, "ui", "username_placeholder.png"), size=(440,46),stretch=True)
+PLAYERNAME_BG_IMG = safe_load_image(
+    os.path.join(ASSETS_DIR, "ui", "your_name.png"),
+    size=(300, 50),  # pick a size that fits nicely over the name
+    stretch=True      # make sure it fits exactly
+)
+LEADERBOARD_BG = safe_load_image(
+    os.path.join(ASSETS_DIR, "ui", "leaderboard.png"),
+    size=(W - 120, 250),
+    stretch=True
+)
+
+LOGO_IMG = safe_load_image(
+    os.path.join(ASSETS_DIR, "ui", "logo.png"),
+    size=(400, 120),   # adjust if needed
+    stretch=False
+)
+
 
 #-------------- HELPERS -----------
 def clamp(v, a, b):
@@ -87,6 +132,18 @@ def draw_bg_or_color(surf, bg_img, fallback_color):
     else:
         surf.fill(fallback_color)
 
+# 🔴 ADDED START: leaderboard helper
+def get_leaderboard_rows(players: dict, limit=8):
+    rows = []
+    for name, stats in players.items():
+        plays = int(stats.get("plays", 0))
+        best = int(stats.get("best_score", 0))
+        last = int(stats.get("last_score", 0))
+        rows.append((name, plays, best, last))
+    rows.sort(key=lambda r: (r[2], r[1]), reverse=True)  # best desc, then plays desc
+    return rows[:limit]
+# 🔴 ADDED END
+
 #-------------- UI WIDGETS -----------
 class Button:
     def __init__(self, rect, label):
@@ -99,11 +156,56 @@ class Button:
         bg = (60, 60, 70) if hover else (40, 40, 48)
         pygame.draw.rect(surf, bg, self.rect, border_radius=16)
         pygame.draw.rect(surf, (130,130,150), self.rect, 2, border_radius=16)
-        txt = FONT.render(self.label, True, (240,240,240))
+        txt = FONT_UI.render(self.label, True, (240,240,240))
         surf.blit(txt, txt.get_rect(center=self.rect.center))
 
     def clicked(self, event):
         return event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.rect.collidepoint(event.pos)
+
+class ImageButton:
+    def __init__(self, image, center, float_amp=6, float_speed=1.2):
+        self.base_image = image
+        self.image = image
+        self.base_center = pygame.Vector2(center)
+        self.rect = image.get_rect(center=center)
+
+        self.hover_scale = 1.08
+        self.float_amp = float_amp
+        self.float_speed = float_speed
+        self.time = random.uniform(0, 10)  # desync buttons slightly
+
+    def update(self, dt):
+        self.time += dt * self.float_speed
+        offset_y = math.sin(self.time) * self.float_amp
+        self.rect.center = (
+            self.base_center.x,
+            self.base_center.y + offset_y
+        )
+
+    def draw(self, surf):
+        mx, my = pygame.mouse.get_pos()
+        hover = self.rect.collidepoint(mx, my)
+
+        if hover:
+            w, h = self.base_image.get_size()
+            scaled = pygame.transform.smoothscale(
+                self.base_image,
+                (int(w * self.hover_scale), int(h * self.hover_scale))
+            )
+            self.image = scaled
+            self.rect = self.image.get_rect(center=self.rect.center)
+        else:
+            self.image = self.base_image
+
+        surf.blit(self.image, self.rect.topleft)
+
+    def clicked(self, event):
+        return (
+            event.type == pygame.MOUSEBUTTONDOWN
+            and event.button == 1
+            and self.rect.collidepoint(event.pos)
+        )
+
 
 class Slider:
     def __init__(self, rect, min_val=0.0, max_val=1.0, value=0.5):
@@ -132,6 +234,7 @@ class Slider:
 class App:
     def __init__(self):
         self.settings = self.load_json(SETTINGS_PATH, DEFAULT_SETTINGS)
+        self.ensure_settings_defaults()
         self.players = self.load_json(PLAYERS_PATH, {}) 
         self.username = None
         self.apply_audio_settings()
@@ -149,6 +252,15 @@ class App:
     def save_json(self, path, data):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+    
+    def ensure_settings_defaults(self):
+    # Ensure sound section
+        self.settings.setdefault("sound", {})
+        self.settings["sound"].setdefault("music", 0.5)
+        self.settings["sound"].setdefault("sfx", 0.7)
+        self.settings["sound"].setdefault("muted", False)
+        # Ensure keybinds section
+        self.settings.setdefault("keybinds", DEFAULT_SETTINGS["keybinds"].copy())
 
     def apply_audio_settings(self):
         s = self.settings["sound"]
@@ -211,47 +323,155 @@ class UsernameScene:
 
     def update(self,dt): pass
     def draw(self,surf):
-        draw_bg_or_color(surf, BG_VIEW,(16,16,20))
-        draw_text(surf,"Fly Feast",FONT_BIG,W//2-150,100)
+        draw_bg_or_color(surf, FRONTPAGE_BG, (16,16,20))
+        if LOGO_IMG:
+            logo_rect = LOGO_IMG.get_rect(center=(W // 2, 120))
+            surf.blit(LOGO_IMG, logo_rect.topleft)
+        else:
+            draw_text(surf,"Fly Feast",FONT_BIG,W//2-150,100)
+
         self.name_entry.draw(surf)
 
 class HomeScene:
     def __init__(self, app):
         self.app = app
-        self.btn_play = Button((80,220,260,100),"")
-        self.btn_settings = Button((370,220,260,100),"")
-        self.btn_quit = Button((660,220,260,100),"Quit")
-
+        self.btn_play = ImageButton(
+        ICON_PLAY,
+        center=(W // 2 - 120, 260)
+        )
+        self.btn_settings = ImageButton(
+        ICON_SETTINGS,
+        center=(W // 2 + 120, 260)
+        )
+        self.username_time = 0.0  # initialize the rainbow/floating time
+        self.username_color = (255, 255, 255) 
     def handle_event(self,event):
         if self.btn_play.clicked(event):
-            # Stop menu music
             pygame.mixer.music.fadeout(500)
-
-            # Launch the game
             subprocess.Popen([sys.executable, GAME_PATH])
-
-            # Close menu app cleanly
             pygame.quit()
             sys.exit()
-            
+                    
         if self.btn_settings.clicked(event):
             self.app.scene = SettingsScene(self.app)
 
-        if self.btn_quit.clicked(event):
-            pygame.quit()
-            sys.exit()
 
     def update(self,dt): pass
 
-    def draw(self,surf):
-        draw_bg_or_color(surf,BG_VIEW,(16,16,20))
-        draw_text(surf,"Fly Feast",FONT_BIG,60,60)
-        draw_text(surf,f"Logged in as: {self.app.username}",FONT_SMALL,62,130)
+    def update(self, dt):
+        self.btn_play.update(dt)
+        self.btn_settings.update(dt)
+        r = int((math.sin(self.username_time) + 1) * 127)
+        g = int((math.sin(self.username_time + 2) + 1) * 127)
+        b = int((math.sin(self.username_time + 4) + 1) * 127)
+        self.username_color = (r, g, b)
+        self.username_time += dt
+        r = int((math.sin(self.username_time) + 1) * 127)
+        g = int((math.sin(self.username_time + 2) + 1) * 127)
+        b = int((math.sin(self.username_time + 4) + 1) * 127)
+        self.username_color = (r, g, b)
+
+
+    def draw(self, surf):
+        draw_bg_or_color(surf, FRONTPAGE_BG, (16, 16, 20))
+        
+        # Draw logo instead of text title
+        if LOGO_IMG:
+            logo_rect = LOGO_IMG.get_rect(center=(W // 2, 105))
+            surf.blit(LOGO_IMG, logo_rect.topleft)
+        else:
+            # Fallback text if image missing
+            draw_text(surf, "FLIES", FONT_BIG, W//2 - 150, 100)
+
+
+        # Draw username background image (brown block)
+        if PLAYERNAME_BG_IMG:
+            bg_rect = PLAYERNAME_BG_IMG.get_rect(center=(W//2, 165))
+            surf.blit(PLAYERNAME_BG_IMG, bg_rect.topleft)
+        else:
+            bg_rect = pygame.Rect(0, 0, 300, 50)
+            bg_rect.center = (W//2, 165)
+            pygame.draw.rect(surf, (139,69,19), bg_rect, border_radius=12)  # fallback brown color
+
+        # Render username text
+        username_text = f"   Hi: {self.app.username}"
+        badge = FONT_SMALL.render(username_text, True, (0, 255, 0))  # bright green text
+
+        # Create padding for the text inside the brown block
+        padding_x = 20  # horizontal padding so text not too close to edges
+        padding_y = 6   # vertical padding
+
+        # Calculate the max width and height for the text inside the background minus padding
+        max_width = bg_rect.width - 2 * padding_x
+        max_height = bg_rect.height - 2 * padding_y
+
+        # If text is too wide, scale it down proportionally
+        if badge.get_width() > max_width:
+            scale_factor = max_width / badge.get_width()
+            new_width = int(badge.get_width() * scale_factor)
+            new_height = int(badge.get_height() * scale_factor)
+            badge = pygame.transform.smoothscale(badge, (new_width, new_height))
+
+        # Position text inside the bg_rect with padding
+        text_pos = (bg_rect.left + padding_x, bg_rect.top + (bg_rect.height - badge.get_height()) // 2)
+
+        # Blit text inside the brown block
+        surf.blit(badge, text_pos)
+
+        # Draw buttons last so they stay on top
         self.btn_play.draw(surf)
         self.btn_settings.draw(surf)
-        self.btn_quit.draw(surf)
-        if ICON_PLAY: surf.blit(ICON_PLAY,(80+85,220+5))
-        if ICON_SETTINGS: surf.blit(ICON_SETTINGS,(370+85,220+5))
+
+    # ... your other draw logic ...
+
+
+        # ...rest of your draw code (leaderboard etc.)
+
+        # Rest of your leaderboard drawing here (unchanged) ...
+
+
+
+# 🔴 ADDED START: Leaderboard panel on the Home/frontpage (no overlap)
+        # Placed BELOW the buttons row: buttons occupy y ~ 220..320, so panel starts at y=360.
+        panel = pygame.Rect(60, 360, W - 120, 250)
+
+        if LEADERBOARD_BG:
+            surf.blit(LEADERBOARD_BG, panel.topleft)
+        else:
+            fallback = pygame.Surface((panel.width, panel.height), pygame.SRCALPHA)
+            fallback.fill((0, 0, 0, 160))
+            surf.blit(fallback, panel.topleft)
+            pygame.draw.rect(surf, (160, 160, 180), panel, 2, border_radius=14)
+
+
+        draw_text(surf, "Leaderboard", FONT, panel.left + 15, panel.top + 12)
+
+        header_y = panel.top + 55
+        draw_text(surf, "NAME", FONT_LB_HEADER, panel.left + 15, header_y,(200, 200, 210))
+        draw_text(surf, "PLAYS", FONT_LB_HEADER, panel.left + 340, header_y,(200, 200, 210))
+        draw_text(surf, "BEST", FONT_LB_HEADER, panel.left + 460, header_y,(200, 200, 210))
+        draw_text(surf, "LAST", FONT_LB_HEADER, panel.left + 580, header_y,(200, 200, 210))
+
+        rows = get_leaderboard_rows(self.app.players, limit=7)
+        y = header_y + 28
+        line_h = 22
+
+        if not rows:
+            draw_text(surf, "No players yet.", FONT_SMALL, panel.left + 15, y, (220, 220, 230))
+        else:
+            for i, (name, plays, best, last) in enumerate(rows, start=1):
+                is_me = (name == self.app.username)
+                col = (255, 220, 120) if is_me else (235, 235, 235)
+
+                draw_text(surf, f"{i:>2}. {name}", FONT_LB, panel.left + 15, y, col)
+                draw_text(surf, str(plays), FONT_LB, panel.left + 350, y, (235, 235, 235))
+                draw_text(surf, str(best),  FONT_LB, panel.left + 470, y, (235, 235, 235))
+                draw_text(surf, str(last),  FONT_LB, panel.left + 590, y, (235, 235, 235))
+
+                y += line_h
+                if y > panel.bottom - 20:
+                    break
+        # 🔴 ADDED END
 
 class GameScene:
     def __init__(self, app):
@@ -303,7 +523,7 @@ class GameScene:
 class SettingsScene:
     def __init__(self, app):
         self.app = app
-        self.back = Button((30,30,120,45),"Back")
+        self.back = Button((30,20,110,36),"Back")
         self.sliders = {
             "music": Slider((300,200,400,20),0.0,1.0,app.settings["sound"].get("music",0.5)),
             "sfx": Slider((300,250,400,20),0.0,1.0,app.settings["sound"].get("sfx",0.7))
@@ -341,15 +561,15 @@ class SettingsScene:
         draw_bg_or_color(surf,BG_VIEW,(16,16,20))
         self.back.draw(surf)
         draw_text(surf,"Settings",FONT_BIG,60,70)
-        draw_text(surf,"Music Volume",FONT,100,190)
+        draw_text(surf,"Music Volume",FONT_UI,100,190)
         self.sliders["music"].draw(surf)
-        draw_text(surf,"SFX Volume",FONT,100,240)
+        draw_text(surf,"SFX Volume",FONT_UI,100,240)
         self.sliders["sfx"].draw(surf)
-        draw_text(surf,"Keybinds",FONT,100,300)
+        draw_text(surf,"Keybinds",FONT_UI,100,300)
         for btn in self.key_buttons.values():
             btn.draw(surf)
         self.mute_btn.draw(surf)
-        draw_text(surf,"Click button to change key",FONT_SMALL,520,320)
+        draw_text(surf,"Click button to change key",FONT_UI_SMALL,520,320)
 
 class TextInput:
     def __init__(self, rect, placeholder=""):
@@ -372,14 +592,39 @@ class TextInput:
                         self.text+=event.unicode
         return None
 
-    def draw(self,surf):
-        bg = (55,55,65) if self.active else (38,38,45)
-        pygame.draw.rect(surf,bg,self.rect,border_radius=12)
-        pygame.draw.rect(surf,(140,140,160),self.rect,2,border_radius=12)
+    def draw(self, surf):
+    # Draw PNG background if loaded
+        if USERNAME_BG_IMG:
+            surf.blit(USERNAME_BG_IMG, self.rect.topleft)
+        else:
+            # fallback gradient
+            grad_height = self.rect.height
+            for i in range(grad_height):
+                c1 = pygame.Color(60, 60, 70)
+                c2 = pygame.Color(40, 40, 48)
+                r = c1.r + (c2.r - c1.r) * i / grad_height
+                g = c1.g + (c2.g - c1.g) * i / grad_height
+                b = c1.b + (c2.b - c1.b) * i / grad_height
+                pygame.draw.line(surf, (int(r), int(g), int(b)), (self.rect.left, self.rect.top + i), (self.rect.right, self.rect.top + i))
+
+        # Border with glow effect on focus
+        base_border_color = pygame.Color(140, 140, 160)
+        glow_color = pygame.Color(100, 200, 255) if self.active else base_border_color
+
+        if self.active:
+            glow_surf = pygame.Surface((self.rect.width + 12, self.rect.height + 12), pygame.SRCALPHA)
+            pygame.draw.rect(glow_surf, glow_color, glow_surf.get_rect(), border_radius=16)
+            glow_surf.set_alpha(100)
+            surf.blit(glow_surf, (self.rect.left - 6, self.rect.top - 6))
+
+        pygame.draw.rect(surf, glow_color, self.rect, 3, border_radius=12)
+
+        # Draw the text
         shown = self.text if self.text else self.placeholder
-        col = (240,240,240) if self.text else (160,160,175)
-        img = FONT_SMALL.render(shown, True, col)
-        surf.blit(img,img.get_rect(midleft=(self.rect.left+12,self.rect.centery)))
+        col = (230, 230, 255) if self.text else (140, 160, 180)
+        txt = FONT_SMALL.render(shown, True, col)
+        surf.blit(txt, txt.get_rect(midleft=(self.rect.left + 14, self.rect.centery)))
+
 
 #-------------- MAIN -----------
 if __name__=="__main__":
