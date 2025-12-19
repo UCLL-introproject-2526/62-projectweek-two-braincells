@@ -76,7 +76,7 @@ PLATFORM_Y = GROUND_Y - 80
 # Platforms list - empty, only plant platforms are used now
 platforms = []
 
-NUM_FLIES = 6
+NUM_FLIES = 12
 TIMER_START_SECONDS = 90
 SCORE_ANIMATION_DURATION = 200
 ANIMATION_SPEED = 150
@@ -602,8 +602,8 @@ def make_fly():
     # Animation state: random offset so flies don't all chirp at the same time
     animation_timer = random.randint(0, FLY_ANIMATION_SPEED - 1)
     return {
-        "x": random.randint(0, SCREEN_WIDTH - 1),
-        "y": random.randint(0, SCREEN_HEIGHT - 1),
+        "x": random.randint(50, SCREEN_WIDTH - FLY_W - 50),
+        "y": random.randint(50, GROUND_Y - FLY_H - 50),
         "vx": math.cos(ang) * spd,
         "vy": math.sin(ang) * spd,
         "change_timer": change_timer,
@@ -682,6 +682,264 @@ def reset_game():
     flies = []
     for _ in range(NUM_FLIES):
         flies.append(make_fly())
+
+# Cache for all platforms (generated once, reused every frame)
+cached_all_platforms = None
+
+def generate_all_platforms():
+    """Generate all platform segments once at initialization. This is expensive, so we cache the result."""
+    global cached_all_platforms
+    all_platforms = list(platforms)  # Copy the platforms list
+    
+    # Add left tree branches as platforms
+    if thumbnail_wood_loaded and thumbnail_wood_img and (branch_1_loaded and branch_2_loaded and branch_3_loaded and branch_4_loaded):
+        trunk_width = thumbnail_wood_img.get_width()
+        branch_imgs = [branch_1_img, branch_2_img, branch_3_img, branch_4_img]
+        for pos, branch_img in zip(LEFT_BRANCH_POSITIONS, branch_imgs):
+            scaled = scale_branch(branch_img, BRANCH_SCALE)
+            if scaled:
+                branch_x = trunk_width - scaled.get_width() // 2 + pos["offset"]
+                branch_y = int(SCREEN_HEIGHT * pos["y"])
+                all_platforms.extend(create_platform_segments_from_branch(scaled, branch_x, branch_y))
+    
+    # Add right tree branches as platforms
+    if thumbnail_wood_loaded and thumbnail_wood_img and (branch_right_1_loaded and branch_right_2_loaded and branch_right_3_loaded and branch_right_4_loaded):
+        trunk_width = thumbnail_wood_img.get_width()
+        right_trunk_x = SCREEN_WIDTH - trunk_width
+        branch_imgs = [branch_right_1_img, branch_right_2_img, branch_right_3_img, branch_right_4_img]
+        for pos, branch_img in zip(RIGHT_BRANCH_POSITIONS, branch_imgs):
+            scaled = scale_branch(branch_img, BRANCH_SCALE)
+            if scaled:
+                branch_x = right_trunk_x + trunk_width - scaled.get_width() // 2 + pos["offset"]
+                branch_y = int(SCREEN_HEIGHT * pos["y"])
+                all_platforms.extend(create_platform_segments_from_branch(scaled, branch_x, branch_y))
+    
+    # Add hanging vine leaves as platforms
+    if vines_top_1_loaded and vines_top_2_loaded and vines_top_3_loaded:
+        VINE_SCALE = 3.0  # Same scale as drawing
+        vine_positions = [
+            {"x": int(SCREEN_WIDTH * 0.15), "img": vines_top_1_img},
+            {"x": int(SCREEN_WIDTH * 0.5), "img": vines_top_2_img},
+            {"x": int(SCREEN_WIDTH * 0.85), "img": vines_top_3_img}
+        ]
+        for vine_data in vine_positions:
+            vine_img = vine_data["img"]
+            # Scale the vine image for platform collision
+            scaled_width = int(vine_img.get_width() * VINE_SCALE)
+            scaled_height = int(vine_img.get_height() * VINE_SCALE)
+            vine_scaled = pygame.transform.scale(vine_img, (scaled_width, scaled_height))
+            vine_x = vine_data["x"] - vine_scaled.get_width() // 2
+            vine_y = 0
+            all_platforms.extend(create_platform_segments_from_branch(vine_scaled, vine_x, vine_y))
+    
+    # Add small plant platforms based on red parts of small plant red image
+    if small_plant_loaded and small_plant_img and small_plant_red_loaded and small_plant_red_img:
+        small_plant_width = small_plant_img.get_width()
+        small_plant_height = small_plant_img.get_height()
+        
+        # Calculate position (same as where it's drawn)
+        left_water_end = LEFT_WATER_START_X + LEFT_WATER_WIDTH
+        space_between = SWAMP_START_X - left_water_end
+        
+        # Calculate rock position first to position plant relative to it
+        if rocks_loaded and rocks_img:
+            rocks_width = rocks_img.get_width()
+            rocks_x = left_water_end + int(space_between * 0.5) - rocks_width // 2
+        else:
+            rocks_x = left_water_end + int(space_between * 0.5)
+        
+        # Position red plant at same location as regular plant (invisible, behind regular plant)
+        small_plant_x = left_water_end + int((rocks_x - left_water_end) * 0.3) - small_plant_width // 2
+        small_plant_y = GROUND_Y - small_plant_height
+        
+        # Scan red plant image for red pixels and create platforms
+        scan_step = 4  # Scan every 4 pixels for performance
+        platform_segments = []
+        
+        for y in range(0, small_plant_height, scan_step):
+            current_segment_start = None
+            for x in range(0, small_plant_width, scan_step):
+                try:
+                    # Get pixel color at this position
+                    pixel_color = small_plant_red_img.get_at((x, y))
+                    r, g, b, a = pixel_color
+                    
+                    # Check if pixel is red (R > G and R > B) and visible
+                    if (a > 128 and r > g and r > b and r > 100):
+                        if current_segment_start is None:
+                            current_segment_start = x
+                    else:
+                        # End of red segment
+                        if current_segment_start is not None:
+                            segment_width = (x - current_segment_start) + scan_step
+                            if segment_width >= 12:  # Only add segments wide enough
+                                platform_segments.append({
+                                    "x": small_plant_x + current_segment_start,
+                                    "y": small_plant_y + y,
+                                    "width": segment_width,
+                                    "height": PLATFORM_HEIGHT
+                                })
+                            current_segment_start = None
+                except:
+                    # Skip if pixel is out of bounds
+                    if current_segment_start is not None:
+                        segment_width = (x - current_segment_start) + scan_step
+                        if segment_width >= 12:
+                            platform_segments.append({
+                                "x": small_plant_x + current_segment_start,
+                                "y": small_plant_y + y,
+                                "width": segment_width,
+                                "height": PLATFORM_HEIGHT
+                            })
+                        current_segment_start = None
+            
+            # Handle segment that extends to end of row
+            if current_segment_start is not None:
+                segment_width = small_plant_width - current_segment_start
+                if segment_width >= 12:
+                    platform_segments.append({
+                        "x": small_plant_x + current_segment_start,
+                        "y": small_plant_y + y,
+                        "width": segment_width,
+                        "height": PLATFORM_HEIGHT
+                    })
+        
+        # Add platform segments to all_platforms
+        all_platforms.extend(platform_segments)
+    
+    # Add red rocks platforms and walls based on red parts of red rocks image
+    # Horizontal red lines = platforms (can stand on them)
+    if rocks_loaded and rocks_img and red_rocks_loaded and red_rocks_img:
+        rocks_width = rocks_img.get_width()
+        rocks_height = rocks_img.get_height()
+        
+        # Calculate the space between water areas
+        left_water_end = LEFT_WATER_START_X + LEFT_WATER_WIDTH
+        space_between = SWAMP_START_X - left_water_end
+        
+        # Position red rocks at same location as regular rocks (invisible, behind regular rocks)
+        red_rocks_x = left_water_end + int(space_between * 0.5) - rocks_width // 2
+        red_rocks_y = GROUND_Y - rocks_height
+        
+        scan_step = 4  # Scan every 4 pixels for performance
+        
+        # Scan horizontally for platforms (horizontal red lines)
+        for y in range(0, rocks_height, scan_step):
+            current_segment_start = None
+            for x in range(0, rocks_width, scan_step):
+                try:
+                    pixel_color = red_rocks_img.get_at((x, y))
+                    r, g, b, a = pixel_color
+                    
+                    if (a > 128 and r > g and r > b and r > 100):
+                        if current_segment_start is None:
+                            current_segment_start = x
+                    else:
+                        # End of horizontal segment - create platform
+                        if current_segment_start is not None:
+                            segment_width = (x - current_segment_start) + scan_step
+                            if segment_width >= 12:  # Only add segments wide enough for platforms
+                                platform = {
+                                    "x": red_rocks_x + current_segment_start,
+                                    "y": red_rocks_y + y,
+                                    "width": segment_width,
+                                    "height": PLATFORM_HEIGHT
+                                }
+                                all_platforms.append(platform)
+                            current_segment_start = None
+                except:
+                    if current_segment_start is not None:
+                        segment_width = (x - current_segment_start) + scan_step
+                        if segment_width >= 12:
+                            platform = {
+                                "x": red_rocks_x + current_segment_start,
+                                "y": red_rocks_y + y,
+                                "width": segment_width,
+                                "height": PLATFORM_HEIGHT
+                            }
+                            all_platforms.append(platform)
+                        current_segment_start = None
+        
+        # Handle segment that extends to end of row
+        if current_segment_start is not None:
+            segment_width = rocks_width - current_segment_start
+            if segment_width >= 12:
+                platform = {
+                    "x": red_rocks_x + current_segment_start,
+                    "y": red_rocks_y + y,
+                    "width": segment_width,
+                    "height": PLATFORM_HEIGHT
+                }
+                all_platforms.append(platform)
+    
+    if plant_loaded and plant_img and plant_red_loaded and plant_red_img:
+        plant_width = plant_img.get_width()
+        plant_height = plant_img.get_height()
+        plant_x = SWAMP_START_X + (SWAMP_WIDTH - plant_width) // 2
+        plant_y = GROUND_Y + SWAMP_HEIGHT - plant_height
+        
+        # Red plant is positioned behind regular plant (same position, not visible)
+        red_plant_x = plant_x
+        red_plant_y = plant_y
+        
+        # Scan red plant image for red pixels and create platforms
+        # Use get_at() to detect red regions (red parts act as platforms)
+        scan_step = 4  # Scan every 4 pixels for performance
+        platform_segments = []
+        
+        for y in range(0, plant_height, scan_step):
+            current_segment_start = None
+            for x in range(0, plant_width, scan_step):
+                try:
+                    # Get pixel color at this position
+                    pixel_color = plant_red_img.get_at((x, y))
+                    r, g, b, a = pixel_color
+                    
+                    # Check if pixel is red (R > G and R > B) and visible
+                    if (a > 128 and r > g and r > b and r > 100):
+                        if current_segment_start is None:
+                            current_segment_start = x
+                    else:
+                        # End of red segment
+                        if current_segment_start is not None:
+                            segment_width = (x - current_segment_start) + scan_step
+                            if segment_width >= 12:  # Only add segments wide enough
+                                platform_segments.append({
+                                    "x": red_plant_x + current_segment_start,
+                                    "y": red_plant_y + y,
+                                    "width": segment_width,
+                                    "height": PLATFORM_HEIGHT
+                                })
+                            current_segment_start = None
+                except:
+                    # Skip if pixel is out of bounds
+                    if current_segment_start is not None:
+                        segment_width = (x - current_segment_start) + scan_step
+                        if segment_width >= 12:
+                            platform_segments.append({
+                                "x": red_plant_x + current_segment_start,
+                                "y": red_plant_y + y,
+                                "width": segment_width,
+                                "height": PLATFORM_HEIGHT
+                            })
+                        current_segment_start = None
+            
+            # Handle segment that extends to end of row
+            if current_segment_start is not None:
+                segment_width = plant_width - current_segment_start
+                if segment_width >= 12:
+                    platform_segments.append({
+                        "x": red_plant_x + current_segment_start,
+                        "y": red_plant_y + y,
+                        "width": segment_width,
+                        "height": PLATFORM_HEIGHT
+                    })
+        
+        # Add platform segments to all_platforms
+        all_platforms.extend(platform_segments)
+    
+    cached_all_platforms = all_platforms
+    return all_platforms
 
 def draw_tiled_ground(surface, tile_img, x, y, width, height):
     """Draw tiled ground texture without gaps"""
@@ -1011,6 +1269,9 @@ def draw_game_end_menu(surface, menu_y):
 
     return None, None, None
 
+# Generate all platforms once at initialization (expensive operation)
+generate_all_platforms()
+
 # Main game loop
 running = True
 if timer_start_time is None:
@@ -1316,10 +1577,10 @@ while running:
             branch_imgs = [branch_1_img, branch_2_img, branch_3_img, branch_4_img]
             for i, (pos, branch_img) in enumerate(zip(LEFT_BRANCH_POSITIONS, branch_imgs)):
                 scaled = scale_branch(branch_img, BRANCH_SCALE)
-            if scaled:
-                branch_x = trunk_width - scaled.get_width() // 2 + pos["offset"]
-                branch_y = int(SCREEN_HEIGHT * pos["y"])
-                screen.blit(scaled, (branch_x, branch_y))
+                if scaled:
+                    branch_x = trunk_width - scaled.get_width() // 2 + pos["offset"]
+                    branch_y = int(SCREEN_HEIGHT * pos["y"])
+                    screen.blit(scaled, (branch_x, branch_y))
     
         # Draw right tree branches
         if thumbnail_wood_loaded and thumbnail_wood_img and (branch_right_1_loaded and branch_right_2_loaded and branch_right_3_loaded and branch_right_4_loaded):
@@ -1328,10 +1589,10 @@ while running:
             branch_imgs = [branch_right_1_img, branch_right_2_img, branch_right_3_img, branch_right_4_img]
             for pos, branch_img in zip(RIGHT_BRANCH_POSITIONS, branch_imgs):
                 scaled = scale_branch(branch_img, BRANCH_SCALE)
-            if scaled:
-                branch_x = right_trunk_x + trunk_width - scaled.get_width() // 2 + pos["offset"]
-                branch_y = int(SCREEN_HEIGHT * pos["y"])
-                screen.blit(scaled, (branch_x, branch_y))
+                if scaled:
+                    branch_x = right_trunk_x + trunk_width - scaled.get_width() // 2 + pos["offset"]
+                    branch_y = int(SCREEN_HEIGHT * pos["y"])
+                    screen.blit(scaled, (branch_x, branch_y))
     
         # Draw tree trunk design on both left and right sides - fill the edges vertically with no gaps
         if thumbnail_wood_loaded and thumbnail_wood_img:
@@ -1485,54 +1746,54 @@ while running:
         # Draw ground and swamp
         if ground_tile_upper_loaded and ground_tile_upper:
             upper_tile_width = ground_tile_upper.get_width()
-        upper_tile_height = ground_tile_upper.get_height()
+            upper_tile_height = ground_tile_upper.get_height()
 
-        top_right_corner_x = ((SWAMP_START_X - 1) // upper_tile_width) * upper_tile_width
-        top_right_corner_y = GROUND_Y
+            top_right_corner_x = ((SWAMP_START_X - 1) // upper_tile_width) * upper_tile_width
+            top_right_corner_y = GROUND_Y
 
-        top_left_right_ground_x = ((SWAMP_START_X + SWAMP_WIDTH) // upper_tile_width) * upper_tile_width
-        top_left_right_ground_y = GROUND_Y
-        
-        # Calculate left water corner positions
-        left_water_left_corner_x = ((LEFT_WATER_START_X - 1) // upper_tile_width) * upper_tile_width
-        left_water_right_corner_x = ((LEFT_WATER_START_X + LEFT_WATER_WIDTH) // upper_tile_width) * upper_tile_width
+            top_left_right_ground_x = ((SWAMP_START_X + SWAMP_WIDTH) // upper_tile_width) * upper_tile_width
+            top_left_right_ground_y = GROUND_Y
+            
+            # Calculate left water corner positions
+            left_water_left_corner_x = ((LEFT_WATER_START_X - 1) // upper_tile_width) * upper_tile_width
+            left_water_right_corner_x = ((LEFT_WATER_START_X + LEFT_WATER_WIDTH) // upper_tile_width) * upper_tile_width
 
-        num_tiles_upper_x = int(math.ceil(SCREEN_WIDTH / upper_tile_width)) + 1
-        num_tiles_upper_y = int(math.ceil(GROUND_HEIGHT / upper_tile_height)) + 1
-        
-        for ty in range(num_tiles_upper_y):
-            for tx in range(num_tiles_upper_x):
-                tile_x = tx * upper_tile_width
-                tile_y = GROUND_Y + ty * upper_tile_height
-                tile_right = tile_x + upper_tile_width
-                
-                # Skip tiles that overlap with the left water area
-                if tile_right > LEFT_WATER_START_X and tile_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH:
-                    continue
-                # Skip tiles that overlap with the swamp area
-                if tile_right > SWAMP_START_X and tile_x < SWAMP_START_X + SWAMP_WIDTH:
-                    continue
-                
-                # Skip corner tiles that are in the left water area (only for first row)
-                if ty == 0 and (tile_x == left_water_left_corner_x or tile_x == left_water_right_corner_x):
-                    continue
-                
-                # Skip corner positions (only for first row)
-                if ty == 0:
-                    if (tile_x == top_right_corner_x and tile_y == top_right_corner_y) or \
-                       (tile_x == top_left_right_ground_x and tile_y == top_left_right_ground_y):
+            num_tiles_upper_x = int(math.ceil(SCREEN_WIDTH / upper_tile_width)) + 1
+            num_tiles_upper_y = int(math.ceil(GROUND_HEIGHT / upper_tile_height)) + 1
+            
+            for ty in range(num_tiles_upper_y):
+                for tx in range(num_tiles_upper_x):
+                    tile_x = tx * upper_tile_width
+                    tile_y = GROUND_Y + ty * upper_tile_height
+                    tile_right = tile_x + upper_tile_width
+                    
+                    # Skip tiles that overlap with the left water area
+                    if tile_right > LEFT_WATER_START_X and tile_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH:
                         continue
-                
-                screen.blit(ground_tile_upper, (tile_x, tile_y))
+                    # Skip tiles that overlap with the swamp area
+                    if tile_right > SWAMP_START_X and tile_x < SWAMP_START_X + SWAMP_WIDTH:
+                        continue
+                    
+                    # Skip corner tiles that are in the left water area (only for first row)
+                    if ty == 0 and (tile_x == left_water_left_corner_x or tile_x == left_water_right_corner_x):
+                        continue
+                    
+                    # Skip corner positions (only for first row)
+                    if ty == 0:
+                        if (tile_x == top_right_corner_x and tile_y == top_right_corner_y) or \
+                           (tile_x == top_left_right_ground_x and tile_y == top_left_right_ground_y):
+                            continue
+                    
+                    screen.blit(ground_tile_upper, (tile_x, tile_y))
 
-        # Only draw corner tiles if they're not in the left water area
-        if ground_tile_corner_loaded and ground_tile_corner:
-            if not (top_right_corner_x >= LEFT_WATER_START_X and top_right_corner_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH):
-                screen.blit(ground_tile_corner, (top_right_corner_x, top_right_corner_y))
+            # Only draw corner tiles if they're not in the left water area
+            if ground_tile_corner_loaded and ground_tile_corner:
+                if not (top_right_corner_x >= LEFT_WATER_START_X and top_right_corner_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH):
+                    screen.blit(ground_tile_corner, (top_right_corner_x, top_right_corner_y))
 
-        if ground_tile_left_corner_loaded and ground_tile_left_corner:
-            if not (top_left_right_ground_x >= LEFT_WATER_START_X and top_left_right_ground_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH):
-                screen.blit(ground_tile_left_corner, (top_left_right_ground_x, top_left_right_ground_y))
+            if ground_tile_left_corner_loaded and ground_tile_left_corner:
+                if not (top_left_right_ground_x >= LEFT_WATER_START_X and top_left_right_ground_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH):
+                    screen.blit(ground_tile_left_corner, (top_left_right_ground_x, top_left_right_ground_y))
         else:
             # Draw ground rectangles, but skip left water and right swamp areas
             pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y, LEFT_WATER_START_X, GROUND_HEIGHT))
@@ -1541,79 +1802,80 @@ while running:
             pygame.draw.rect(screen, GROUND_COLOR, (SWAMP_START_X + SWAMP_WIDTH, GROUND_Y, 
                                                    SCREEN_WIDTH - (SWAMP_START_X + SWAMP_WIDTH), GROUND_HEIGHT))
 
+        # Draw main ground tiles below the top row (always draw if loaded, regardless of upper tiles)
         if ground_tile_main_loaded and ground_tile_main:
             tile_width = ground_tile_main.get_width()
-        tile_height = ground_tile_main.get_height()
-        
-        # Draw left ground (before left water area)
-        left_ground_before_water_width = LEFT_WATER_START_X
-        left_ground_height = SWAMP_HEIGHT - GROUND_HEIGHT
-        left_ground_x = 0
-        left_ground_y = GROUND_Y + GROUND_HEIGHT
-        
-        # Calculate left water area boundaries
-        left_water_top = GROUND_Y + SWAMP_HEIGHT - LEFT_WATER_HEIGHT
-        left_water_bottom = GROUND_Y + SWAMP_HEIGHT
+            tile_height = ground_tile_main.get_height()
+            
+            # Draw left ground (before left water area)
+            left_ground_before_water_width = LEFT_WATER_START_X
+            left_ground_height = SWAMP_HEIGHT - GROUND_HEIGHT
+            left_ground_x = 0
+            left_ground_y = GROUND_Y + GROUND_HEIGHT
+            
+            # Calculate left water area boundaries
+            left_water_top = GROUND_Y + SWAMP_HEIGHT - LEFT_WATER_HEIGHT
+            left_water_bottom = GROUND_Y + SWAMP_HEIGHT
 
-        num_tiles_x = int(math.ceil(left_ground_before_water_width / tile_width)) + 1
-        num_tiles_y = int(math.ceil(left_ground_height / tile_height)) + 1
+            num_tiles_x = int(math.ceil(left_ground_before_water_width / tile_width)) + 1
+            num_tiles_y = int(math.ceil(left_ground_height / tile_height)) + 1
 
-        for ty in range(num_tiles_y):
-            for tx in range(num_tiles_x):
-                tile_x = left_ground_x + tx * tile_width
-                tile_y = left_ground_y + ty * tile_height
-                tile_right = tile_x + tile_width
-                tile_bottom = tile_y + tile_height
-                
-                # Skip all tiles that are horizontally within the left water area bounds
-                # (both above and within the water area)
-                if tile_right > LEFT_WATER_START_X and tile_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH:
-                    # Skip if tile is not completely below the water (i.e., above or overlapping)
-                    if tile_y < left_water_bottom:
-                        continue
-                
-                screen.blit(ground_tile_main, (tile_x, tile_y))
+            for ty in range(num_tiles_y):
+                for tx in range(num_tiles_x):
+                    tile_x = left_ground_x + tx * tile_width
+                    tile_y = left_ground_y + ty * tile_height
+                    tile_right = tile_x + tile_width
+                    tile_bottom = tile_y + tile_height
+                    
+                    # Skip all tiles that are horizontally within the left water area bounds
+                    # (both above and within the water area)
+                    if tile_right > LEFT_WATER_START_X and tile_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH:
+                        # Skip if tile is not completely below the water (i.e., above or overlapping)
+                        if tile_y < left_water_bottom:
+                            continue
+                    
+                    screen.blit(ground_tile_main, (tile_x, tile_y))
 
-        # Draw ground between left water and right swamp
-        middle_ground_start_x = LEFT_WATER_START_X + LEFT_WATER_WIDTH
-        middle_ground_width = SWAMP_START_X - middle_ground_start_x
-        middle_ground_height = SWAMP_HEIGHT - GROUND_HEIGHT
-        middle_ground_y = GROUND_Y + GROUND_HEIGHT
-        
-        num_tiles_middle_x = int(math.ceil(middle_ground_width / tile_width)) + 1
-        num_tiles_middle_y = int(math.ceil(middle_ground_height / tile_height)) + 1
-        
-        for ty in range(num_tiles_middle_y):
-            for tx in range(num_tiles_middle_x):
-                tile_x = middle_ground_start_x + tx * tile_width
-                tile_y = middle_ground_y + ty * tile_height
-                tile_right = tile_x + tile_width
-                tile_bottom = tile_y + tile_height
-                
-                # Skip tiles that overlap with left water area (horizontally and vertically)
-                if tile_right > LEFT_WATER_START_X and tile_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH:
-                    # Skip if tile is not completely below the water (i.e., above or overlapping)
-                    if tile_y < left_water_bottom:
-                        continue
-                
-                screen.blit(ground_tile_main, (tile_x, tile_y))
+            # Draw ground between left water and right swamp
+            middle_ground_start_x = LEFT_WATER_START_X + LEFT_WATER_WIDTH
+            middle_ground_width = SWAMP_START_X - middle_ground_start_x
+            middle_ground_height = SWAMP_HEIGHT - GROUND_HEIGHT
+            middle_ground_y = GROUND_Y + GROUND_HEIGHT
+            
+            num_tiles_middle_x = int(math.ceil(middle_ground_width / tile_width)) + 1
+            num_tiles_middle_y = int(math.ceil(middle_ground_height / tile_height)) + 1
+            
+            for ty in range(num_tiles_middle_y):
+                for tx in range(num_tiles_middle_x):
+                    tile_x = middle_ground_start_x + tx * tile_width
+                    tile_y = middle_ground_y + ty * tile_height
+                    tile_right = tile_x + tile_width
+                    tile_bottom = tile_y + tile_height
+                    
+                    # Skip tiles that overlap with left water area (horizontally and vertically)
+                    if tile_right > LEFT_WATER_START_X and tile_x < LEFT_WATER_START_X + LEFT_WATER_WIDTH:
+                        # Skip if tile is not completely below the water (i.e., above or overlapping)
+                        if tile_y < left_water_bottom:
+                            continue
+                    
+                    screen.blit(ground_tile_main, (tile_x, tile_y))
 
-        # Draw ground after right swamp
-        # The top part (GROUND_HEIGHT) is already handled by ground_tile_upper above
-        # Only draw the bottom part (SWAMP_HEIGHT - GROUND_HEIGHT) using main tiles
-        right_ground_start_x = SWAMP_START_X + SWAMP_WIDTH
-        right_ground_width = SCREEN_WIDTH - right_ground_start_x
-        right_ground_height = SWAMP_HEIGHT - GROUND_HEIGHT
-        right_ground_y = GROUND_Y + GROUND_HEIGHT
-        
-        num_tiles_right_x = int(math.ceil(right_ground_width / tile_width)) + 1
-        num_tiles_right_y = int(math.ceil(right_ground_height / tile_height)) + 1
-        
-        for ty in range(num_tiles_right_y):
-            for tx in range(num_tiles_right_x):
-                tile_x = right_ground_start_x + tx * tile_width
-                tile_y = right_ground_y + ty * tile_height
-                screen.blit(ground_tile_main, (tile_x, tile_y))
+            # Draw ground after right swamp
+            # The top part (GROUND_HEIGHT) is already handled by ground_tile_upper above
+            # Only draw the bottom part (SWAMP_HEIGHT - GROUND_HEIGHT) using main tiles
+            right_ground_start_x = SWAMP_START_X + SWAMP_WIDTH
+            right_ground_width = SCREEN_WIDTH - right_ground_start_x
+            right_ground_height = SWAMP_HEIGHT - GROUND_HEIGHT
+            right_ground_y = GROUND_Y + GROUND_HEIGHT
+            
+            num_tiles_right_x = int(math.ceil(right_ground_width / tile_width)) + 1
+            num_tiles_right_y = int(math.ceil(right_ground_height / tile_height)) + 1
+            
+            for ty in range(num_tiles_right_y):
+                for tx in range(num_tiles_right_x):
+                    tile_x = right_ground_start_x + tx * tile_width
+                    tile_y = right_ground_y + ty * tile_height
+                    screen.blit(ground_tile_main, (tile_x, tile_y))
         else:
             # Draw ground rectangles, but skip left water and right swamp areas
             pygame.draw.rect(screen, GROUND_COLOR, (0, GROUND_Y + GROUND_HEIGHT, LEFT_WATER_START_X, SWAMP_HEIGHT - GROUND_HEIGHT))
@@ -2122,255 +2384,11 @@ while running:
     
         # First, check platform collision BEFORE deciding if we should lock Y position
         # This prevents the character from floating when walking off platforms
-        # Add plant platforms based on red parts of red plant image (red plant is invisible, behind regular plant)
-        all_platforms = list(platforms)  # Copy the platforms list
-    
-        # Add left tree branches as platforms
-        if thumbnail_wood_loaded and thumbnail_wood_img and (branch_1_loaded and branch_2_loaded and branch_3_loaded and branch_4_loaded):
-            trunk_width = thumbnail_wood_img.get_width()
-            branch_imgs = [branch_1_img, branch_2_img, branch_3_img, branch_4_img]
-            for pos, branch_img in zip(LEFT_BRANCH_POSITIONS, branch_imgs):
-                scaled = scale_branch(branch_img, BRANCH_SCALE)
-                if scaled:
-                    branch_x = trunk_width - scaled.get_width() // 2 + pos["offset"]
-                    branch_y = int(SCREEN_HEIGHT * pos["y"])
-                    all_platforms.extend(create_platform_segments_from_branch(scaled, branch_x, branch_y))
-    
-        # Add right tree branches as platforms
-        if thumbnail_wood_loaded and thumbnail_wood_img and (branch_right_1_loaded and branch_right_2_loaded and branch_right_3_loaded and branch_right_4_loaded):
-            trunk_width = thumbnail_wood_img.get_width()
-            right_trunk_x = SCREEN_WIDTH - trunk_width
-            branch_imgs = [branch_right_1_img, branch_right_2_img, branch_right_3_img, branch_right_4_img]
-            for pos, branch_img in zip(RIGHT_BRANCH_POSITIONS, branch_imgs):
-                scaled = scale_branch(branch_img, BRANCH_SCALE)
-                if scaled:
-                    branch_x = right_trunk_x + trunk_width - scaled.get_width() // 2 + pos["offset"]
-                    branch_y = int(SCREEN_HEIGHT * pos["y"])
-                    all_platforms.extend(create_platform_segments_from_branch(scaled, branch_x, branch_y))
-    
-        # Add hanging vine leaves as platforms
-        if vines_top_1_loaded and vines_top_2_loaded and vines_top_3_loaded:
-            VINE_SCALE = 3.0  # Same scale as drawing
-            vine_positions = [
-                {"x": int(SCREEN_WIDTH * 0.15), "img": vines_top_1_img},
-                {"x": int(SCREEN_WIDTH * 0.5), "img": vines_top_2_img},
-                {"x": int(SCREEN_WIDTH * 0.85), "img": vines_top_3_img}
-            ]
-            for vine_data in vine_positions:
-                vine_img = vine_data["img"]
-                # Scale the vine image for platform collision
-                scaled_width = int(vine_img.get_width() * VINE_SCALE)
-                scaled_height = int(vine_img.get_height() * VINE_SCALE)
-                vine_scaled = pygame.transform.scale(vine_img, (scaled_width, scaled_height))
-                vine_x = vine_data["x"] - vine_scaled.get_width() // 2
-                vine_y = 0
-                all_platforms.extend(create_platform_segments_from_branch(vine_scaled, vine_x, vine_y))
-    
-        # Add small plant platforms based on red parts of small plant red image
-        if small_plant_loaded and small_plant_img and small_plant_red_loaded and small_plant_red_img:
-            small_plant_width = small_plant_img.get_width()
-            small_plant_height = small_plant_img.get_height()
-            
-            # Calculate position (same as where it's drawn)
-            left_water_end = LEFT_WATER_START_X + LEFT_WATER_WIDTH
-            space_between = SWAMP_START_X - left_water_end
-            
-            # Calculate rock position first to position plant relative to it
-            if rocks_loaded and rocks_img:
-                rocks_width = rocks_img.get_width()
-                rocks_x = left_water_end + int(space_between * 0.5) - rocks_width // 2
-            else:
-                rocks_x = left_water_end + int(space_between * 0.5)
-            
-            # Position red plant at same location as regular plant (invisible, behind regular plant)
-            small_plant_x = left_water_end + int((rocks_x - left_water_end) * 0.3) - small_plant_width // 2
-            small_plant_y = GROUND_Y - small_plant_height
-            
-            # Scan red plant image for red pixels and create platforms
-            scan_step = 4  # Scan every 4 pixels for performance
-            platform_segments = []
-            
-            for y in range(0, small_plant_height, scan_step):
-                current_segment_start = None
-                for x in range(0, small_plant_width, scan_step):
-                    try:
-                        # Get pixel color at this position
-                        pixel_color = small_plant_red_img.get_at((x, y))
-                        r, g, b, a = pixel_color
-                        
-                        # Check if pixel is red (R > G and R > B) and visible
-                        if (a > 128 and r > g and r > b and r > 100):
-                            if current_segment_start is None:
-                                current_segment_start = x
-                        else:
-                            # End of red segment
-                            if current_segment_start is not None:
-                                segment_width = (x - current_segment_start) + scan_step
-                                if segment_width >= 12:  # Only add segments wide enough
-                                    platform_segments.append({
-                                        "x": small_plant_x + current_segment_start,
-                                        "y": small_plant_y + y,
-                                        "width": segment_width,
-                                        "height": PLATFORM_HEIGHT
-                                    })
-                                current_segment_start = None
-                    except:
-                        # Skip if pixel is out of bounds
-                        if current_segment_start is not None:
-                            segment_width = (x - current_segment_start) + scan_step
-                            if segment_width >= 12:
-                                platform_segments.append({
-                                    "x": small_plant_x + current_segment_start,
-                                    "y": small_plant_y + y,
-                                    "width": segment_width,
-                                    "height": PLATFORM_HEIGHT
-                                })
-                            current_segment_start = None
-                
-                # Handle segment that extends to end of row
-                if current_segment_start is not None:
-                    segment_width = small_plant_width - current_segment_start
-                    if segment_width >= 12:
-                        platform_segments.append({
-                            "x": small_plant_x + current_segment_start,
-                            "y": small_plant_y + y,
-                            "width": segment_width,
-                            "height": PLATFORM_HEIGHT
-                        })
-            
-            # Add platform segments to all_platforms
-            all_platforms.extend(platform_segments)
-    
-        # Add red rocks platforms and walls based on red parts of red rocks image
-        # Horizontal red lines = platforms (can stand on them)
-        if rocks_loaded and rocks_img and red_rocks_loaded and red_rocks_img:
-            rocks_width = rocks_img.get_width()
-            rocks_height = rocks_img.get_height()
-            
-            # Calculate the space between water areas
-            left_water_end = LEFT_WATER_START_X + LEFT_WATER_WIDTH
-            space_between = SWAMP_START_X - left_water_end
-            
-            # Position red rocks at same location as regular rocks (invisible, behind regular rocks)
-            red_rocks_x = left_water_end + int(space_between * 0.5) - rocks_width // 2
-            red_rocks_y = GROUND_Y - rocks_height
-            
-            scan_step = 4  # Scan every 4 pixels for performance
-            
-            # Scan horizontally for platforms (horizontal red lines)
-            for y in range(0, rocks_height, scan_step):
-                current_segment_start = None
-                for x in range(0, rocks_width, scan_step):
-                    try:
-                        pixel_color = red_rocks_img.get_at((x, y))
-                        r, g, b, a = pixel_color
-                        
-                        if (a > 128 and r > g and r > b and r > 100):
-                            if current_segment_start is None:
-                                current_segment_start = x
-                        else:
-                            # End of horizontal segment - create platform
-                            if current_segment_start is not None:
-                                segment_width = (x - current_segment_start) + scan_step
-                                if segment_width >= 12:  # Only add segments wide enough for platforms
-                                    platform = {
-                                        "x": red_rocks_x + current_segment_start,
-                                        "y": red_rocks_y + y,
-                                        "width": segment_width,
-                                        "height": PLATFORM_HEIGHT
-                                    }
-                                    all_platforms.append(platform)
-                                current_segment_start = None
-                    except:
-                        if current_segment_start is not None:
-                            segment_width = (x - current_segment_start) + scan_step
-                            if segment_width >= 12:
-                                platform = {
-                                    "x": red_rocks_x + current_segment_start,
-                                    "y": red_rocks_y + y,
-                                    "width": segment_width,
-                                    "height": PLATFORM_HEIGHT
-                                }
-                                all_platforms.append(platform)
-                            current_segment_start = None
-            
-            # Handle segment that extends to end of row
-            if current_segment_start is not None:
-                segment_width = rocks_width - current_segment_start
-                if segment_width >= 12:
-                    platform = {
-                        "x": red_rocks_x + current_segment_start,
-                        "y": red_rocks_y + y,
-                        "width": segment_width,
-                        "height": PLATFORM_HEIGHT
-                    }
-                    all_platforms.append(platform)
-    
-        if plant_loaded and plant_img and plant_red_loaded and plant_red_img:
-            plant_width = plant_img.get_width()
-            plant_height = plant_img.get_height()
-            plant_x = SWAMP_START_X + (SWAMP_WIDTH - plant_width) // 2
-            plant_y = GROUND_Y + SWAMP_HEIGHT - plant_height
-            
-            # Red plant is positioned behind regular plant (same position, not visible)
-            red_plant_x = plant_x
-            red_plant_y = plant_y
-            
-            # Scan red plant image for red pixels and create platforms
-            # Use get_at() to detect red regions (red parts act as platforms)
-            scan_step = 4  # Scan every 4 pixels for performance
-            platform_segments = []
-            
-            for y in range(0, plant_height, scan_step):
-                current_segment_start = None
-                for x in range(0, plant_width, scan_step):
-                    try:
-                        # Get pixel color at this position
-                        pixel_color = plant_red_img.get_at((x, y))
-                        r, g, b, a = pixel_color
-                        
-                        # Check if pixel is red (R > G and R > B) and visible
-                        if (a > 128 and r > g and r > b and r > 100):
-                            if current_segment_start is None:
-                                current_segment_start = x
-                        else:
-                            # End of red segment
-                            if current_segment_start is not None:
-                                segment_width = (x - current_segment_start) + scan_step
-                                if segment_width >= 12:  # Only add segments wide enough
-                                    platform_segments.append({
-                                        "x": red_plant_x + current_segment_start,
-                                        "y": red_plant_y + y,
-                                        "width": segment_width,
-                                        "height": PLATFORM_HEIGHT
-                                    })
-                                current_segment_start = None
-                    except:
-                        # Skip if pixel is out of bounds
-                        if current_segment_start is not None:
-                            segment_width = (x - current_segment_start) + scan_step
-                            if segment_width >= 12:
-                                platform_segments.append({
-                                    "x": red_plant_x + current_segment_start,
-                                    "y": red_plant_y + y,
-                                    "width": segment_width,
-                                    "height": PLATFORM_HEIGHT
-                                })
-                            current_segment_start = None
-                
-                # Handle segment that extends to end of row
-                if current_segment_start is not None:
-                    segment_width = plant_width - current_segment_start
-                    if segment_width >= 12:
-                        platform_segments.append({
-                            "x": red_plant_x + current_segment_start,
-                            "y": red_plant_y + y,
-                            "width": segment_width,
-                            "height": PLATFORM_HEIGHT
-                        })
-            
-            # Add platform segments to all_platforms
-            all_platforms.extend(platform_segments)
+        # Use cached platforms (generated once at initialization)
+        if cached_all_platforms is None:
+            all_platforms = generate_all_platforms()
+        else:
+            all_platforms = cached_all_platforms
     
         # Apply physics FIRST, then check collisions
         # Physics
@@ -2466,20 +2484,22 @@ while running:
         # Update tongue (with retract animation)
         if character["tongue_extended"]:
             if character["tongue_retracting"]:
+                # Retract the tongue
                 character["tongue_length"] -= character["tongue_retract_speed"]
-            if character["tongue_length"] <= 0:
-                character["tongue_length"] = 0
-                character["tongue_extended"] = False
-                character["tongue_retracting"] = False
-        else:
-            if character["tongue_length"] < character["tongue_max_length"]:
-                character["tongue_length"] += character["tongue_speed"]
+                if character["tongue_length"] <= 0:
+                    character["tongue_length"] = 0
+                    character["tongue_extended"] = False
+                    character["tongue_retracting"] = False
             else:
-                character["tongue_length"] = character["tongue_max_length"]
-        
-        # when time is up, start retracting (not instant disappear)
-        if current_time >= character["tongue_end_time"]:
-            character["tongue_retracting"] = True
+                # Extend the tongue
+                if character["tongue_length"] < character["tongue_max_length"]:
+                    character["tongue_length"] += character["tongue_speed"]
+                else:
+                    character["tongue_length"] = character["tongue_max_length"]
+            
+            # when time is up, start retracting (not instant disappear)
+            if current_time >= character["tongue_end_time"]:
+                character["tongue_retracting"] = True
         
         frog_center_x = character["x"] + character["width"] // 2
         frog_center_y = character["y"] + character["height"] // 2
@@ -2668,25 +2688,25 @@ while running:
                     fly["y"] = GROUND_Y - FLY_H
                     fly["vy"] *= -1
 
-        # Draw fly with animation frame and direction
-        if fly_img:
-            current_frame = fly.get("frame", 0)
-            vx = fly.get("vx", 0)
-            facing_left = vx < 0  # Flip sprite if moving left
-            
-            # Select the correct frame
-            if current_frame == 0:
-                sprite_to_draw = fly_img
+            # Draw fly with animation frame and direction
+            if fly_img:
+                current_frame = fly.get("frame", 0)
+                vx = fly.get("vx", 0)
+                facing_left = vx < 0  # Flip sprite if moving left
+                
+                # Select the correct frame
+                if current_frame == 0:
+                    sprite_to_draw = fly_img
+                else:
+                    sprite_to_draw = fly_img_frame2 if fly_img_frame2 else fly_img
+                
+                # Flip horizontally if moving left
+                if facing_left:
+                    sprite_to_draw = pygame.transform.flip(sprite_to_draw, True, False)
+                
+                screen.blit(sprite_to_draw, (fly["x"], fly["y"]))
             else:
-                sprite_to_draw = fly_img_frame2 if fly_img_frame2 else fly_img
-            
-            # Flip horizontally if moving left
-            if facing_left:
-                sprite_to_draw = pygame.transform.flip(sprite_to_draw, True, False)
-            
-            screen.blit(sprite_to_draw, (fly["x"], fly["y"]))
-        else:
-            pygame.draw.rect(screen, (255, 255, 0), (fly["x"], fly["y"], FLY_W, FLY_H))
+                pygame.draw.rect(screen, (255, 255, 0), (fly["x"], fly["y"], FLY_W, FLY_H))
     
         # Draw UI
         if pixel_font_loaded:
