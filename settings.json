@@ -1,14 +1,7 @@
 {
   "sound": {
-    "music": 0.505338078291815,
-    "sfx": 0.5124555160142349,
+    "music": 0.3914590747330961,
+    "sfx": 0.5266903914590747,
     "muted": false
-  },
-  "keybinds": {
-    "left": "K_q",
-    "right": "K_d",
-    "jump": "K_SPACE",
-    "tongue": "K_LCTRL",
-    "pause": "K_ESCAPE"
   }
 }
