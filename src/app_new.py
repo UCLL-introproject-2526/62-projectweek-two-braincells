@@ -471,6 +471,12 @@ if rocks_loaded and rocks_img_raw:
 else:
     rocks_img = None
 
+# Load mushroom sprites
+mushroom_tall_img, mushroom_tall_loaded = load_image(os.path.join(SPRITES_DIR, "mushroom", "musroom_tall.png"), convert_alpha=True)
+mushroom_squished_img, mushroom_squished_loaded = load_image(os.path.join(SPRITES_DIR, "mushroom", "musroom_squished.png"), convert_alpha=True)
+MUSHROOM_BOUNCE_VELOCITY = -20  # High bounce velocity (negative = upward)
+MUSHROOM_SCALE = 1.0
+
 # Load red rocks for collision detection (invisible, behind regular rocks)
 red_rocks_img_raw, red_rocks_loaded = load_image(os.path.join(ASSETS_DIR, "red_rocks_v2.png"), convert_alpha=True)
 if red_rocks_loaded and red_rocks_img_raw:
@@ -559,6 +565,11 @@ high_score = 0
 score_animation_time = 0
 timer_start_time = None
 timer_remaining = TIMER_START_SECONDS
+
+# Mushroom state
+mushroom_squished = False
+mushroom_squish_start_time = 0
+MUSHROOM_SQUISH_DURATION = 100  # milliseconds
 
 # --- GAME OVER STATE ---
 game_over = False
@@ -1561,25 +1572,54 @@ while running:
                 {"x": int(SCREEN_WIDTH * 0.5), "img": vines_top_2_img},
                 {"x": int(SCREEN_WIDTH * 0.85), "img": vines_top_3_img}
             ]
+            # Shadow settings for vines
+            vine_shadow_offset_x = 8
+            vine_shadow_offset_y = 8
+            vine_shadow_alpha = 120
+            
             for vine_data in vine_positions:
                 vine_img = vine_data["img"]
                 # Scale the vine image
                 scaled_width = int(vine_img.get_width() * VINE_SCALE)
                 scaled_height = int(vine_img.get_height() * VINE_SCALE)
                 vine_scaled = pygame.transform.scale(vine_img, (scaled_width, scaled_height))
+                
+                # Create shadow surface for vine
+                vine_shadow_surface = pygame.Surface((scaled_width, scaled_height), pygame.SRCALPHA)
+                vine_shadow_surface.fill((0, 0, 0, vine_shadow_alpha))
+                vine_shadow_surface.blit(vine_scaled, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                
                 vine_x = vine_data["x"] - vine_scaled.get_width() // 2
                 vine_y = 0  # Hang from top of screen
+                
+                # Draw shadow first
+                screen.blit(vine_shadow_surface, (vine_x + vine_shadow_offset_x, vine_y + vine_shadow_offset_y))
+                # Draw vine on top
                 screen.blit(vine_scaled, (vine_x, vine_y))
     
         # Draw left tree branches
         if thumbnail_wood_loaded and thumbnail_wood_img and (branch_1_loaded and branch_2_loaded and branch_3_loaded and branch_4_loaded):
             trunk_width = thumbnail_wood_img.get_width()
             branch_imgs = [branch_1_img, branch_2_img, branch_3_img, branch_4_img]
+            # Shadow settings for branches
+            branch_shadow_offset_x = 8
+            branch_shadow_offset_y = 8
+            branch_shadow_alpha = 120
+            
             for i, (pos, branch_img) in enumerate(zip(LEFT_BRANCH_POSITIONS, branch_imgs)):
                 scaled = scale_branch(branch_img, BRANCH_SCALE)
                 if scaled:
                     branch_x = trunk_width - scaled.get_width() // 2 + pos["offset"]
                     branch_y = int(SCREEN_HEIGHT * pos["y"])
+                    
+                    # Create shadow surface for branch
+                    branch_shadow_surface = pygame.Surface(scaled.get_size(), pygame.SRCALPHA)
+                    branch_shadow_surface.fill((0, 0, 0, branch_shadow_alpha))
+                    branch_shadow_surface.blit(scaled, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                    
+                    # Draw shadow first
+                    screen.blit(branch_shadow_surface, (branch_x + branch_shadow_offset_x, branch_y + branch_shadow_offset_y))
+                    # Draw branch on top
                     screen.blit(scaled, (branch_x, branch_y))
     
         # Draw right tree branches
@@ -1587,11 +1627,25 @@ while running:
             trunk_width = thumbnail_wood_img.get_width()
             right_trunk_x = SCREEN_WIDTH - trunk_width
             branch_imgs = [branch_right_1_img, branch_right_2_img, branch_right_3_img, branch_right_4_img]
+            # Shadow settings for branches (same as left branches)
+            branch_shadow_offset_x = 8
+            branch_shadow_offset_y = 8
+            branch_shadow_alpha = 120
+            
             for pos, branch_img in zip(RIGHT_BRANCH_POSITIONS, branch_imgs):
                 scaled = scale_branch(branch_img, BRANCH_SCALE)
                 if scaled:
                     branch_x = right_trunk_x + trunk_width - scaled.get_width() // 2 + pos["offset"]
                     branch_y = int(SCREEN_HEIGHT * pos["y"])
+                    
+                    # Create shadow surface for branch
+                    branch_shadow_surface = pygame.Surface(scaled.get_size(), pygame.SRCALPHA)
+                    branch_shadow_surface.fill((0, 0, 0, branch_shadow_alpha))
+                    branch_shadow_surface.blit(scaled, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                    
+                    # Draw shadow first (offset to the left for right side)
+                    screen.blit(branch_shadow_surface, (branch_x - branch_shadow_offset_x, branch_y + branch_shadow_offset_y))
+                    # Draw branch on top
                     screen.blit(scaled, (branch_x, branch_y))
     
         # Draw tree trunk design on both left and right sides - fill the edges vertically with no gaps
@@ -2159,6 +2213,28 @@ while running:
         # Draw rocks
         screen.blit(rocks_img, (rocks_x, rocks_y))
         
+        # Draw mushroom on top of the rock
+        if mushroom_tall_loaded and mushroom_tall_img and mushroom_squished_loaded and mushroom_squished_img:
+            # Calculate mushroom position (centered on top of rock)
+            if rocks_loaded and rocks_img:
+                mushroom_width = int(mushroom_tall_img.get_width() * MUSHROOM_SCALE)
+                mushroom_height = int(mushroom_tall_img.get_height() * MUSHROOM_SCALE)
+                mushroom_x = rocks_x + rocks_width // 2 - mushroom_width // 2
+                # Position halfway between last (lower) and current (higher) position, then move higher by frog height, then 15px lower, then 4px lower, then 2px lower
+                mushroom_y = rocks_y + int(rocks_height * 0.3) - int(mushroom_height * 0.7) - character["height"] + 15 + 4 + 2
+                
+                # Check if mushroom should be squished
+                current_time = pygame.time.get_ticks()
+                if mushroom_squished and (current_time - mushroom_squish_start_time) < MUSHROOM_SQUISH_DURATION:
+                    # Draw squished mushroom
+                    mushroom_squished_scaled = pygame.transform.scale(mushroom_squished_img, (mushroom_width, mushroom_height))
+                    screen.blit(mushroom_squished_scaled, (mushroom_x, mushroom_y))
+                else:
+                    # Draw normal tall mushroom
+                    mushroom_squished = False  # Reset squished state
+                    mushroom_tall_scaled = pygame.transform.scale(mushroom_tall_img, (mushroom_width, mushroom_height))
+                    screen.blit(mushroom_tall_scaled, (mushroom_x, mushroom_y))
+        
         # Draw vines on the left and right sides of the rock
         if vines_loaded and vines_img:
             # Scale vines to be much smaller (about 30% of rock height) for right side
@@ -2416,32 +2492,77 @@ while running:
 
         # Skip collision checks when dead (let character fly freely)
         if not game_over:
-            # Check platform collision FIRST
-            for platform in all_platforms:
-                platform_rect = pygame.Rect(platform["x"], platform["y"], platform["width"], platform["height"])
-                platform_target_y = platform["y"] - character["height"] + sprite_padding_offset
+            # Check mushroom collision first (before platform collision)
+            if mushroom_tall_loaded and mushroom_tall_img and rocks_loaded and rocks_img:
+                # Calculate mushroom position (same as drawing code)
+                left_water_end = LEFT_WATER_START_X + LEFT_WATER_WIDTH
+                space_between = SWAMP_START_X - left_water_end
+                rocks_width = rocks_img.get_width()
+                rocks_height = rocks_img.get_height()
+                rocks_x = left_water_end + int(space_between * 0.5) - rocks_width // 2
+                rocks_y = GROUND_Y - rocks_height
                 
-                # Check if character is horizontally within platform bounds
+                mushroom_width = int(mushroom_tall_img.get_width() * MUSHROOM_SCALE)
+                mushroom_height = int(mushroom_tall_img.get_height() * MUSHROOM_SCALE)
+                mushroom_x = rocks_x + rocks_width // 2 - mushroom_width // 2
+                # Match the drawing position exactly
+                mushroom_y = rocks_y + int(rocks_height * 0.3) - int(mushroom_height * 0.7) - character["height"] + 15 + 4 + 2
+                
+                # Check collision with mushroom
                 char_left = character["x"]
                 char_right = character["x"] + character["width"]
-                platform_left = platform["x"]
-                platform_right = platform["x"] + platform["width"]
+                char_bottom = character["y"] + character["height"]
+                mushroom_left = mushroom_x
+                mushroom_right = mushroom_x + mushroom_width
+                mushroom_top = mushroom_y
+                mushroom_bottom = mushroom_y + mushroom_height
                 
-                # Character is on platform if there's any horizontal overlap
-                is_horizontally_on_platform = (char_right > platform_left and char_left < platform_right)
+                # Check if character is horizontally within mushroom bounds
+                is_horizontally_on_mushroom = (char_right > mushroom_left and char_left < mushroom_right)
                 
-                if is_horizontally_on_platform:
-                    # Check if character is on or near the platform
-                    if character_feet_y >= platform["y"] - 10 and character_feet_y <= platform["y"] + platform["height"] + 10:
-                        # Only apply if character is above or at platform level (not below it)
-                        if character["y"] <= platform_target_y + 10:
-                            # If falling onto platform or already on platform
-                            if character["velocity_y"] >= 0 or abs(character["velocity_y"]) < 0.5:
-                                character["y"] = platform_target_y
-                                character["velocity_y"] = 0
-                                on_ground = True
-                                on_platform = True
-                                break
+                if is_horizontally_on_mushroom:
+                    # Check if character is landing on top of mushroom
+                    if char_bottom >= mushroom_top - 5 and char_bottom <= mushroom_bottom + 10:
+                        # Only apply if character is falling onto mushroom (not jumping up through it)
+                        if character["velocity_y"] >= 0:
+                            # Set character position on top of mushroom
+                            character["y"] = mushroom_top - character["height"]
+                            # Apply high bounce
+                            character["velocity_y"] = MUSHROOM_BOUNCE_VELOCITY
+                            # Trigger squish animation
+                            mushroom_squished = True
+                            mushroom_squish_start_time = current_time
+                            # Play bounce sound if available
+                            sound.play("jump", settings["sound"]["sfx"] if not settings["sound"]["muted"] else 0.0)
+                            on_platform = True
+            
+            # Check platform collision FIRST (only if not already on mushroom)
+            if not on_platform:
+                for platform in all_platforms:
+                    platform_rect = pygame.Rect(platform["x"], platform["y"], platform["width"], platform["height"])
+                    platform_target_y = platform["y"] - character["height"] + sprite_padding_offset
+                    
+                    # Check if character is horizontally within platform bounds
+                    char_left = character["x"]
+                    char_right = character["x"] + character["width"]
+                    platform_left = platform["x"]
+                    platform_right = platform["x"] + platform["width"]
+                    
+                    # Character is on platform if there's any horizontal overlap
+                    is_horizontally_on_platform = (char_right > platform_left and char_left < platform_right)
+                    
+                    if is_horizontally_on_platform:
+                        # Check if character is on or near the platform
+                        if character_feet_y >= platform["y"] - 10 and character_feet_y <= platform["y"] + platform["height"] + 10:
+                            # Only apply if character is above or at platform level (not below it)
+                            if character["y"] <= platform_target_y + 10:
+                                # If falling onto platform or already on platform
+                                if character["velocity_y"] >= 0 or abs(character["velocity_y"]) < 0.5:
+                                    character["y"] = platform_target_y
+                                    character["velocity_y"] = 0
+                                    on_ground = True
+                                    on_platform = True
+                                    break
         
         # Check ground collision (only if not on platform and not over water/swamp)
         if not on_platform and (visual_feet_y >= GROUND_Y or character_feet_y >= GROUND_Y + sprite_padding_offset) and not is_over_left_water and not is_over_swamp:
@@ -2528,6 +2649,8 @@ while running:
 
                 flies.pop(hit_idx)
                 score += 1
+                # Add 1 second to the timer when catching a fly
+                timer_remaining += 1.0
                 if score > high_score:
                     high_score = score
                 score_animation_time = current_time
